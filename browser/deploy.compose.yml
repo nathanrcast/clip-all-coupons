@@ -1,0 +1,25 @@
+# Serve the family guide page + userscript publicly so phones can reach them.
+# Run this from inside the browser/ dir (the volume mounts ./ as the docroot).
+#   1. Point a Cloudflare Tunnel hostname at http://web:80.
+#   2. Put the tunnel token in a .env file next to this:  TUNNEL_TOKEN=...
+#   3. docker compose -f deploy.compose.yml up -d
+# Then share the tunnel's public URL with whoever should use it.
+services:
+  web:
+    image: nginx:alpine
+    container_name: coupon-clipper-web
+    restart: unless-stopped
+    volumes:
+      - ./:/usr/share/nginx/html:ro   # serves index.html + safeway-clip-all.user.js + bookmarklet.txt
+    ports:
+      - "8551:80"                     # optional: also reachable on the LAN
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: coupon-clipper-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - web

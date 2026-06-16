@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Family Coupon Clipper — Setup</title>
+<style>
+  :root{--red:#e2231a;--bg:#0f1419;--card:#1a2129;--line:#2b3947;--txt:#eef2f5;--muted:#9aa7b2;--ok:#38c172}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:max(20px,env(safe-area-inset-top)) 16px 60px;-webkit-text-size-adjust:100%}
+  .wrap{max-width:560px;margin:0 auto}
+  h1{font-size:1.7rem;margin:.2em 0 .1em;text-align:center}
+  .tag{text-align:center;color:var(--muted);margin:0 0 22px}
+  .pick{display:flex;gap:10px;margin-bottom:22px}
+  .pick button{flex:1;padding:16px;font-size:1.05rem;font-weight:700;border:2px solid var(--line);
+    background:var(--card);color:var(--txt);border-radius:14px;cursor:pointer}
+  .pick button.active{border-color:var(--red);background:#241015}
+  .panel{display:none}
+  .panel.show{display:block}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:0 0 14px}
+  .step h3{margin:0 0 6px;font-size:1.1rem;display:flex;align-items:center;gap:10px}
+  .num{background:var(--red);color:#fff;width:30px;height:30px;border-radius:50%;
+    display:inline-flex;align-items:center;justify-content:center;font-size:1rem;flex:0 0 auto}
+  .step p{margin:.3em 0;color:#d6dde3}
+  .step .hint{color:var(--muted);font-size:.92rem}
+  a.btn,button.btn{display:block;width:100%;text-align:center;text-decoration:none;
+    background:var(--red);color:#fff;font-weight:700;font-size:1.05rem;padding:15px;border:none;
+    border-radius:12px;margin:12px 0 4px;cursor:pointer}
+  a.lnk{color:#ff8a84;font-weight:600}
+  .note{background:#10261a;border:1px solid #1f5235;border-radius:12px;padding:14px 16px;margin:18px 0;color:#cdeedd}
+  .pill{display:inline-block;background:#241015;border:1px solid var(--red);color:#ffb3ae;
+    border-radius:999px;padding:2px 10px;font-size:.8rem;font-weight:700;vertical-align:middle}
+  code{background:#0e141a;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:.9em}
+  footer{text-align:center;color:var(--muted);font-size:.9rem;margin-top:30px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎫 Coupon Clipper</h1>
+  <p class="tag">Clip <b>every</b> Safeway coupon in one tap — on your own account.</p>
+
+  <div class="pick">
+    <button id="b-and" onclick="pick('and')">📱 Android</button>
+    <button id="b-ios" onclick="pick('ios')">🍎 iPhone / iPad</button>
+  </div>
+
+  <!-- ANDROID -->
+  <section id="p-and" class="panel">
+    <div class="step">
+      <h3><span class="num">1</span> Get the Firefox app</h3>
+      <p>This only works in <b>Firefox</b> (not Chrome) on Android.</p>
+      <a class="btn" href="https://play.google.com/store/apps/details?id=org.mozilla.firefox" target="_blank" rel="noopener">Install Firefox</a>
+      <p class="hint">Already have it? Skip to step 2. Open these instructions <b>inside Firefox</b>.</p>
+    </div>
+    <div class="step">
+      <h3><span class="num">2</span> Add the helper</h3>
+      <p>Tap below, then tap <b>Add to Firefox</b> → <b>Add</b> → <b>Okay</b>.</p>
+      <a class="btn" href="https://addons.mozilla.org/firefox/addon/violentmonkey/" target="_blank" rel="noopener">Add Violentmonkey</a>
+      <p class="hint">This is a trusted, free add-on that lets the clipper run.</p>
+    </div>
+    <div class="step">
+      <h3><span class="num">3</span> Add the clipper</h3>
+      <p>Tap below, then tap <b>Confirm installation</b>.</p>
+      <a class="btn" href="safeway-clip-all.user.js">Install the Clipper</a>
+      <p class="hint">You only do steps 1–3 once.</p>
+    </div>
+    <div class="step">
+      <h3><span class="num">4</span> Use it</h3>
+      <p>1. In Firefox, go to <a class="lnk" href="https://www.safeway.com/foru/coupons-deals.html" target="_blank" rel="noopener">Safeway coupons &amp; deals</a> and <b>sign in</b>.</p>
+      <p>2. Tap the red <b>✂ Clip all coupons</b> button at the bottom-right.</p>
+      <p>3. Wait for "Done!" — that's it. 🎉</p>
+    </div>
+  </section>
+
+  <!-- iOS -->
+  <section id="p-ios" class="panel">
+    <div class="note">
+      iPhones don't allow add-ons in Firefox, so we use a <b>bookmark</b> instead. It's a few more
+      taps to set up, but then it's one tap to clip.
+    </div>
+    <div class="step">
+      <h3><span class="num">1</span> Copy the clipper</h3>
+      <button class="btn" id="copybtn" onclick="copyCode()">Copy the clipper code</button>
+      <p class="hint" id="copymsg">Use <b>Safari</b> for the next steps.</p>
+    </div>
+    <div class="step">
+      <h3><span class="num">2</span> Make a bookmark</h3>
+      <p>In <b>Safari</b>, open any page, tap the <b>Share</b> icon (□↑) → <b>Add Bookmark</b> → <b>Save</b>.</p>
+    </div>
+    <div class="step">
+      <h3><span class="num">3</span> Edit the bookmark</h3>
+      <p>Tap the <b>book</b> icon → <b>Edit</b> → tap the bookmark you just made. Then:</p>
+      <p>• Change the name to <b>Clip Coupons</b>.<br>
+         • Delete the web address and <b>paste</b> (the code you copied).<br>
+         • Tap <b>Done</b>.</p>
+    </div>
+    <div class="step">
+      <h3><span class="num">4</span> Use it</h3>
+      <p>1. In Safari, go to <a class="lnk" href="https://www.safeway.com/foru/coupons-deals.html" target="_blank" rel="noopener">Safeway coupons &amp; deals</a> and <b>sign in</b>.</p>
+      <p>2. Tap the address bar, type <b>Clip</b>, and tap the <b>Clip Coupons</b> bookmark.</p>
+      <p>3. Wait for "Done!" 🎉</p>
+    </div>
+  </section>
+
+  <div class="note">
+    <span class="pill">Good to know</span> If it says <b>"All caught up!"</b> it means every coupon on
+    your account is already clipped — nothing more to do. New coupons drop weekly, so run it again then.
+  </div>
+
+  <footer>Use your own Safeway login. Questions? Ask the family tech helper. 🙂</footer>
+</div>
+
+<script>
+  function pick(p){
+    document.getElementById('p-and').classList.toggle('show',p==='and');
+    document.getElementById('p-ios').classList.toggle('show',p==='ios');
+    document.getElementById('b-and').classList.toggle('active',p==='and');
+    document.getElementById('b-ios').classList.toggle('active',p==='ios');
+    try{location.hash=p}catch(e){}
+  }
+  // Default to the phone we think you're on.
+  var guess = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios' : 'and';
+  pick((location.hash||'').replace('#','') || guess);
+
+  async function copyCode(){
+    var msg=document.getElementById('copymsg');
+    try{
+      var txt=await (await fetch('bookmarklet.txt')).text();
+      await navigator.clipboard.writeText(txt);
+      msg.innerHTML='<b style="color:#38c172">Copied!</b> Now do step 2.';
+    }catch(e){
+      msg.innerHTML='Couldn’t auto-copy. <a class="lnk" href="bookmarklet.txt" target="_blank">Open the code</a>, select all, and copy it.';
+    }
+  }
+</script>
+</body>
+</html>
