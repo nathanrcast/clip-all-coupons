@@ -1,12 +1,12 @@
 // ==UserScript==
-// @name         Safeway Clip-All Coupons
-// @namespace    https://github.com/nathanrcast/safeway-clipper
+// @name         Clip-All Coupons
+// @namespace    https://github.com/nathanrcast/clip-all-coupons
 // @version      0.1.0
-// @description  Clip ALL Safeway/Albertsons for-U coupons at once via the gallery API (no 250 cap). Firefox + mobile friendly.
+// @description  Clip ALL of your Albertsons-family for-U coupons (Safeway, Vons, Acme, Jewel-Osco…) at once via the gallery API (no 250 cap). Firefox + mobile friendly.
 // @author       ncastel
-// @homepageURL  https://github.com/nathanrcast/safeway-clipper
-// @downloadURL  https://raw.githubusercontent.com/nathanrcast/safeway-clipper/main/browser/safeway-clip-all.user.js
-// @updateURL    https://raw.githubusercontent.com/nathanrcast/safeway-clipper/main/browser/safeway-clip-all.user.js
+// @homepageURL  https://github.com/nathanrcast/clip-all-coupons
+// @downloadURL  https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons.user.js
+// @updateURL    https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons.user.js
 // @icon         data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9C%82%3C/text%3E%3C/svg%3E
 // @match        https://*.safeway.com/*
 // @match        https://*.albertsons.com/*
@@ -216,7 +216,7 @@
     running = true;
     const s = getSession();
     if (!s.token) {
-      alert("Couldn't read your Safeway session. Make sure you're signed in, then reload the coupons page.");
+      alert("Couldn't read your store session. Make sure you're signed in, then reload the coupons page.");
       running = false;
       return;
     }
@@ -269,7 +269,7 @@
 
     try { localStorage.removeItem("abJ4uCoupons"); } catch {}
     if (blocked) {
-      msg.textContent = "Safeway's bot protection paused us (Error 15). Your account is fine — wait a few minutes, reload, and run it again to finish the rest.";
+      msg.textContent = "The store's bot protection paused us (Error 15). Your account is fine — wait a few minutes, reload, and run it again to finish the rest.";
     } else
     msg.textContent = stop ? "Stopped." : "Done!";
     cnt.textContent = `Clipped ${clipped} · already had ${already} · failed ${failed} (of ${total})`;

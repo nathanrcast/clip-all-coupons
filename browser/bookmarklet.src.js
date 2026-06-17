@@ -1,6 +1,6 @@
-/* Source for the Safeway Clip-All bookmarklet. Self-contained IIFE.
+/* Source for the Clip-All Coupons bookmarklet. Self-contained IIFE.
  * Build the javascript: URL with:  ./browser/build-bookmarklet.sh
- * Same core as safeway-clip-all.user.js, minus the floating button/menu —
+ * Same core as clip-all-coupons.user.js, minus the floating button/menu —
  * it runs immediately when you tap the bookmark while on a logged-in coupons page.
  */
 (function () {
@@ -120,7 +120,7 @@
   (async function () {
     if (window.__ccRunning) return; window.__ccRunning = true;
     var s = getSession();
-    if (!s.token) { alert("Couldn't read your Safeway session. Sign in, open the coupons page, then tap again."); window.__ccRunning = false; return; }
+    if (!s.token) { alert("Couldn't read your store session. Sign in, open the coupons page, then tap again."); window.__ccRunning = false; return; }
     var ov = overlay(), msg = ov.querySelector("#cc-msg"), cnt = ov.querySelector("#cc-count"), bar = ov.querySelector("#cc-bar"), stop = false;
     ov.querySelector("#cc-stop").onclick = function () { stop = true; };
     var all = await enumerateAll(s);
@@ -142,7 +142,7 @@
     var ws = []; for (var i = 0; i < CONC; i++) ws.push(worker());
     await Promise.all(ws);
     try { localStorage.removeItem("abJ4uCoupons"); } catch (e) {}
-    msg.textContent = blocked ? "Safeway's bot protection paused us (Error 15). Your account is fine — wait a few minutes, reload, and tap again to finish." : (stop ? "Stopped." : "Done!");
+    msg.textContent = blocked ? "The store's bot protection paused us (Error 15). Your account is fine — wait a few minutes, reload, and tap again to finish." : (stop ? "Stopped." : "Done!");
     cnt.textContent = "Clipped " + clipped + " · already had " + already + " · failed " + failed + " (of " + total + ")";
     var sb = ov.querySelector("#cc-stop"); sb.textContent = "Close"; sb.onclick = function () { ov.remove(); };
     window.__ccRunning = false;

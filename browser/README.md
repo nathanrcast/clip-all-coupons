@@ -1,16 +1,16 @@
-# Safeway Clip-All — userscript + bookmarklet
+# Clip-All Coupons — userscript + bookmarklet
 
-Clips **all** Safeway/Albertsons for-U coupons (no 250/700 cap) by enumerating offers
-through the `ecomgallery` API + the `abJ4uCoupons` cache, then clipping via Safeway's own
+Clips **all** Albertsons-family for-U coupons (no 250/700 cap) by enumerating offers
+through the `ecomgallery` API + the `abJ4uCoupons` cache, then clipping via the store's own
 clip endpoint (the same call the published Coupon Clipper extension uses — so it's proven).
 Runs in *your* logged-in session, so the login WAF is a non-issue. Firefox + mobile friendly.
 
 ## Status: parser locked (probed 2026-06-15)
 
-The gallery shape is confirmed (see `../CLAUDE.md` § Confirmed Safeway for-U API). One call
+The gallery shape is confirmed (see `../CLAUDE.md` § Confirmed for-U API). One call
 (`offerPgm=PD-CC-MF-SC`) returns all offers as `data.offers` (object keyed by `offerId`); we filter
 `status === "C"` (already clipped) and clip the rest via `offerPgm` as `itemType`. `gallery-probe.js`
-is kept for re-verifying if Safeway changes the API.
+is kept for re-verifying if the API changes.
 
 ## Deploy the guide page (optional — for sharing with others)
 
@@ -35,7 +35,7 @@ phones can reach it, then share **one link**.
 
 1. Install **Violentmonkey** (or Tampermonkey) — both are on AMO for Firefox **and Firefox
    Android**.
-2. Open the dashboard → **+ → Install from file** (or paste) → `safeway-clip-all.user.js`.
+2. Open the dashboard → **+ → Install from file** (or paste) → `clip-all-coupons.user.js`.
 3. Go to a coupons page while signed in → tap the floating **✂ Clip all coupons** button
    (bottom-right), or the userscript-manager menu command.
 
@@ -51,7 +51,7 @@ phones can reach it, then share **one link**.
 | File | What |
 |---|---|
 | `gallery-probe.js` | console snippet to confirm the offer-data shape (clips nothing) |
-| `safeway-clip-all.user.js` | the userscript (floating button + menu command) |
+| `clip-all-coupons.user.js` | the userscript (floating button + menu command) |
 | `bookmarklet.src.js` | readable bookmarklet source |
 | `build-bookmarklet.sh` | terser-minifies src → `bookmarklet.txt` (`javascript:` URL) |
 | `bookmarklet.txt` | generated; paste as a bookmark URL |

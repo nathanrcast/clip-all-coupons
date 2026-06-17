@@ -1,7 +1,7 @@
-/* Safeway gallery PROBE — clips nothing. Confirms how to enumerate ALL offers.
+/* for-U gallery PROBE — clips nothing. Confirms how to enumerate ALL offers.
  *
  * HOW TO RUN (Firefox or Chrome):
- *   1. Sign in to safeway.com and open the for-U coupons & deals page.
+ *   1. Sign in to your store's site (safeway.com, vons.com, …) and open the for-U coupons & deals page.
  *   2. Open DevTools (F12) -> Console.
  *   3. Paste this whole file, press Enter, wait ~5 seconds for "REPORT READY".
  *   4. The full report is auto-copied to your clipboard -> just paste (Ctrl/Cmd+V)
@@ -25,7 +25,7 @@
     try { return JSON.stringify(v, null, 2); } catch { return String(v); }
   };
 
-  push("=== SAFEWAY GALLERY PROBE ===", "host:", location.hostname);
+  push("=== FOR-U GALLERY PROBE ===", "host:", location.hostname);
 
   // --- read page session (mirrors the working extension's page-script.js) ---
   const user = window.AB?.userInfo;
