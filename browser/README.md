@@ -47,11 +47,24 @@ phones can reach it, then share **one link**.
    - On mobile, trigger it by typing the bookmark's name in the address bar.
    - Caveat: some sites' CSP can block bookmarklets; the userscript path is more robust.
 
+## Kroger family (Fry's, Ralphs, King Soopers, Smith's, Fred Meyer, QFC, Dillons…)
+
+A separate adapter. Kroger has **no "all offers" API**, so — like every working Kroger clipper —
+it scrolls the coupons page to load all cards then **clicks each unclipped "Clip" button** serially
+(same jittered cadence). Kroger renders ~150 coupons at a time, so one run clips up to ~150; run it
+again for the rest. Install `clip-all-coupons-kroger.user.js` the same way, or use
+`kroger-bookmarklet.txt`. It was **not** live-tested on a real Kroger account — if a redesign breaks
+the clip buttons, run `kroger-probe.js` on the coupons page (clip one coupon manually) and it reports
+the current selectors + any clip API call.
+
 ## Files
 | File | What |
 |---|---|
-| `gallery-probe.js` | console snippet to confirm the offer-data shape (clips nothing) |
-| `clip-all-coupons.user.js` | the userscript (floating button + menu command) |
-| `bookmarklet.src.js` | readable bookmarklet source |
-| `build-bookmarklet.sh` | terser-minifies src → `bookmarklet.txt` (`javascript:` URL) |
-| `bookmarklet.txt` | generated; paste as a bookmark URL |
+| `gallery-probe.js` | Albertsons: console snippet to confirm the offer-data shape (clips nothing) |
+| `clip-all-coupons.user.js` | Albertsons userscript (floating button + menu command) |
+| `bookmarklet.src.js` | readable Albertsons bookmarklet source |
+| `clip-all-coupons-kroger.user.js` | Kroger userscript (DOM-click; floating button + menu command) |
+| `kroger-bookmarklet.src.js` | readable Kroger bookmarklet source |
+| `kroger-probe.js` | Kroger: console probe of clip API + button selectors (clips nothing) |
+| `build-bookmarklet.sh` | terser-minifies every `*bookmarklet.src.js` → matching `*.txt` |
+| `bookmarklet.txt` / `kroger-bookmarklet.txt` | generated; paste as a bookmark URL |
