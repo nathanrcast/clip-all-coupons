@@ -43,10 +43,10 @@
 
   <div class="note">
     🛒 Shop at <b>Fry's, Ralphs, King Soopers, Smith's, Fred Meyer, QFC, Dillons</b> or another
-    <b>Kroger</b> store? Use the Kroger version instead:
-    <a class="lnk" href="clip-all-coupons-kroger.user.js">install the Kroger clipper</a>
-    (add it in step 2 below the same way). It clips up to ~150 at a time — just tap again for more.
-    The steps below are for <b>Safeway / Albertsons / Vons</b> stores.
+    <b>Kroger</b> store? There's a Kroger version too — on <b>Android</b> tap
+    <a class="lnk" href="clip-all-coupons-kroger.user.js">install the Kroger clipper</a> (add it in
+    step 2 the same way); on <b>iPhone</b> pick <b>Kroger family</b> in step 1 below. It clips up to
+    ~150 at a time — just tap again for more.
   </div>
 
   <div class="pick">
@@ -88,6 +88,10 @@
       iPhones don't allow add-ons in Firefox, so we use a <b>bookmark</b> instead. It's a few more
       taps to set up, but then it's one tap to clip.
     </div>
+    <div class="pick">
+      <button id="s-alb" onclick="store('alb')">🛒 Safeway / Albertsons</button>
+      <button id="s-kro" onclick="store('kro')">🛒 Kroger family</button>
+    </div>
     <div class="step">
       <h3><span class="num">1</span> Copy the clipper</h3>
       <button class="btn" id="copybtn" onclick="copyCode()">Copy the clipper code</button>
@@ -100,15 +104,16 @@
     <div class="step">
       <h3><span class="num">3</span> Edit the bookmark</h3>
       <p>Tap the <b>book</b> icon → <b>Edit</b> → tap the bookmark you just made. Then:</p>
-      <p>• Change the name to <b>Clip Coupons</b>.<br>
+      <p>• Change the name to <b id="ios-name">Clip Coupons</b>.<br>
          • Delete the web address and <b>paste</b> (the code you copied).<br>
          • Tap <b>Done</b>.</p>
     </div>
     <div class="step">
       <h3><span class="num">4</span> Use it</h3>
-      <p>1. In Safari, go to <a class="lnk" href="https://www.safeway.com/foru/coupons-deals.html" target="_blank" rel="noopener">Safeway coupons &amp; deals</a> and <b>sign in</b>.</p>
-      <p>2. Tap the address bar, type <b>Clip</b>, and tap the <b>Clip Coupons</b> bookmark.</p>
+      <p>1. In Safari, go to <a class="lnk" id="ios-store-link" href="https://www.safeway.com/foru/coupons-deals.html" target="_blank" rel="noopener">Safeway coupons &amp; deals</a> and <b>sign in</b>.</p>
+      <p>2. Tap the address bar, type <b id="ios-name2">Clip</b>, and tap the <b id="ios-name3">Clip Coupons</b> bookmark.</p>
       <p>3. Wait for "Done!" 🎉</p>
+      <p class="hint" id="ios-krohint" style="display:none">Kroger shows ~150 coupons at a time — when it's done, just tap the bookmark again for the next batch.</p>
     </div>
   </section>
 
@@ -132,14 +137,35 @@
   var guess = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios' : 'and';
   pick((location.hash||'').replace('#','') || guess);
 
+  // iOS store selection (Albertsons family vs Kroger family).
+  var iosStore='alb';
+  function store(s){
+    iosStore=s;
+    var k = s==='kro';
+    document.getElementById('s-alb').classList.toggle('active',!k);
+    document.getElementById('s-kro').classList.toggle('active',k);
+    document.getElementById('copybtn').textContent = k?'Copy the Kroger clipper code':'Copy the clipper code';
+    var name = k?'Clip Kroger':'Clip Coupons';
+    document.getElementById('ios-name').textContent = name;
+    document.getElementById('ios-name2').textContent = k?'Kroger':'Clip';
+    document.getElementById('ios-name3').textContent = name;
+    var link=document.getElementById('ios-store-link');
+    link.textContent = k?'Kroger coupons':'Safeway coupons & deals';
+    link.href = k?'https://www.kroger.com/savings/cl/coupons/':'https://www.safeway.com/foru/coupons-deals.html';
+    document.getElementById('ios-krohint').style.display = k?'block':'none';
+    document.getElementById('copymsg').innerHTML='Use <b>Safari</b> for the next steps.';
+  }
+  store('alb');
+
   async function copyCode(){
     var msg=document.getElementById('copymsg');
+    var file = iosStore==='kro' ? 'kroger-bookmarklet.txt' : 'bookmarklet.txt';
     try{
-      var txt=await (await fetch('bookmarklet.txt')).text();
+      var txt=await (await fetch(file)).text();
       await navigator.clipboard.writeText(txt);
       msg.innerHTML='<b style="color:#38c172">Copied!</b> Now do step 2.';
     }catch(e){
-      msg.innerHTML='Couldn’t auto-copy. <a class="lnk" href="bookmarklet.txt" target="_blank">Open the code</a>, select all, and copy it.';
+      msg.innerHTML='Couldn’t auto-copy. <a class="lnk" href="'+file+'" target="_blank">Open the code</a>, select all, and copy it.';
     }
   }
 </script>
