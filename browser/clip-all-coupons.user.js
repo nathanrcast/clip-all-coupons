@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Clip-All Coupons
 // @namespace    https://github.com/nathanrcast/clip-all-coupons
-// @version      0.1.0
+// @version      0.2.0
 // @description  Clip ALL of your Albertsons-family for-U coupons (Safeway, Vons, Acme, Jewel-Osco…) at once via the gallery API (no 250 cap). Firefox + mobile friendly.
 // @author       ncastel
 // @homepageURL  https://github.com/nathanrcast/clip-all-coupons
@@ -41,10 +41,26 @@
   // jittered gap clears the WAF and mirrors how a person clicks.
   const CLIP_CONCURRENCY = 1;
   const MIN_GAP_MS = 350, MAX_GAP_MS = 750;
+  const GALLERY_TIMEOUT_MS = 20000;
+  const CLIP_TIMEOUT_MS = 10000;
+  const CLIP_RETRIES = 2;
+  const BLOCK_RETRY_MS = 45000;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const gap = () => MIN_GAP_MS + Math.random() * (MAX_GAP_MS - MIN_GAP_MS);
   // One ecomgallery call with all programs returns every offer (confirmed via probe).
   const GALLERY_PARAM = "PD-CC-MF-SC";
+  const AVG_CLIP_SEC = 0.55;
+
+  function isCouponsPath() {
+    const p = location.pathname.toLowerCase();
+    return /\/foru\b/.test(p) || /coupon/.test(p) || /\/j4u\b/.test(p);
+  }
+
+  function fetchWithTimeout(url, opts, ms) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms);
+    return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t));
+  }
 
   // ---- session (mirrors the working Coupon Clipper extension) -------------
   function getSession() {
@@ -55,10 +71,11 @@
       user?.UUID || PW.AB?.COMMON?.generateUUID?.() || "cc-" + Date.now();
     const token =
       user?.SWY_SHOP_TOKEN || ref?.service?._userSession?.SWY_SHOP_TOKEN;
-    const storeId =
+    const storeId = String(
       user?.j4u?.storeId || user?.branchId ||
       ref?.service?.userInfo?.j4u?.storeId || ref?.service?.userInfo?.branchId ||
-      (typeof PW.getStoreId === "function" ? PW.getStoreId() : "") || "";
+      (typeof PW.getStoreId === "function" ? PW.getStoreId() : "") || ""
+    );
     const banner = location.hostname.split(".").slice(-2, -1)[0] || "safeway";
     return { token, storeId, clientId, clientSecret, correlationId, banner };
   }
@@ -121,33 +138,44 @@
     });
   }
 
+  /** @returns {{ offers: object[], source: string, galleryError: string|null }} */
   async function enumerateAll(s) {
     const offers = [];
     const seen = new Set();
+    let galleryError = null;
+    let source = "none";
 
     // (1) gallery: one call returns all programs; data.offers is an object keyed by offerId.
     try {
       const url = `https://${location.hostname}/abs/pub/web/j4u/api/ecomgallery` +
-        `?offerPgm=${encodeURIComponent(GALLERY_PARAM)}&storeId=${s.storeId}&transformOfferbyUpc=y`;
-      const r = await fetch(url, { headers: headers(s), credentials: "include" });
+        `?offerPgm=${encodeURIComponent(GALLERY_PARAM)}&storeId=${encodeURIComponent(s.storeId)}&transformOfferbyUpc=y`;
+      const r = await fetchWithTimeout(url, { headers: headers(s), credentials: "include" }, GALLERY_TIMEOUT_MS);
       if (r.ok) {
         const json = await r.json();
         const o = json && json.offers;
         const list = Array.isArray(o) ? o : (o && typeof o === "object" ? Object.values(o) : []);
         list.forEach((x) => add(offers, seen, x));
-        // generic fallback if the shape ever changes
         if (!list.length) {
           const f = []; extractOffers(json, f, new Set());
           f.forEach((x) => add(offers, seen, x));
         }
+        if (offers.length) source = "gallery";
+      } else {
+        galleryError = `HTTP ${r.status}`;
       }
-    } catch (e) { console.warn("[clip-all] gallery", e); }
+    } catch (e) {
+      galleryError = e?.name === "AbortError" ? "timed out" : (e?.message || "network error");
+      console.warn("[clip-all] gallery", e);
+    }
 
     // (2) localStorage cache (objCoupons), if the gallery gave nothing
     if (!offers.length) {
       try {
         const oc = JSON.parse(localStorage.getItem("abJ4uCoupons") || "{}").objCoupons;
-        if (oc && typeof oc === "object") Object.values(oc).forEach((x) => add(offers, seen, x));
+        if (oc && typeof oc === "object") {
+          Object.values(oc).forEach((x) => add(offers, seen, x));
+          if (offers.length) source = "cache";
+        }
       } catch (e) { /* ignore */ }
     }
 
@@ -157,34 +185,90 @@
         const m = btn.id.match(/^couponAddBtn(\d+)$/);
         if (m) add(offers, seen, { offerId: m[1], offerPgm: "SC" });
       });
+      if (offers.length) source = "dom";
     }
 
-    return offers;
+    return { offers, source, galleryError };
   }
 
   // ---- clip --------------------------------------------------------------
-  async function clipOne(s, offer) {
-    const url = `https://${location.hostname}/abs/pub/web/j4u/api/offers/clip?storeId=${s.storeId}`;
+  async function clipOneOnce(s, offer) {
+    const url = `https://${location.hostname}/abs/pub/web/j4u/api/offers/clip?storeId=${encodeURIComponent(s.storeId)}`;
     const body = {
       items: [
         { clipType: "C", itemId: offer.offerId, itemType: offer.offerPgm },
         { clipType: "L", itemId: offer.offerId, itemType: offer.offerPgm },
       ],
     };
-    try {
-      const r = await fetch(url, {
-        method: "POST", headers: headers(s), credentials: "include",
-        body: JSON.stringify(body),
-      });
-      // Akamai bot block — back off instead of hammering and risking a longer lockout.
-      if (r.status === 403 || r.status === 429) return "blocked";
-      if (!r.ok) return "failed";
-      const j = await r.json().catch(() => ({}));
-      const st = j?.items?.[0]?.status;
-      return st === 1 ? "clipped" : "already";
-    } catch {
+    const r = await fetchWithTimeout(url, {
+      method: "POST", headers: headers(s), credentials: "include",
+      body: JSON.stringify(body),
+    }, CLIP_TIMEOUT_MS);
+    // Akamai bot block — back off instead of hammering and risking a longer lockout.
+    if (r.status === 403 || r.status === 429) return "blocked";
+    if (r.status >= 500) return "retry";
+    if (!r.ok) {
+      console.warn("[clip-all] clip failed", offer.offerId, r.status);
       return "failed";
     }
+    const j = await r.json().catch(() => ({}));
+    const st = j?.items?.[0]?.status;
+    return st === 1 ? "clipped" : "already";
+  }
+
+  async function clipOne(s, offer) {
+    let blockedOnce = false;
+    for (let attempt = 0; attempt <= CLIP_RETRIES; attempt++) {
+      try {
+        const res = await clipOneOnce(s, offer);
+        if (res === "blocked") {
+          if (!blockedOnce) {
+            blockedOnce = true;
+            await sleep(BLOCK_RETRY_MS);
+            continue;
+          }
+          return "blocked";
+        }
+        if (res === "retry") {
+          if (attempt < CLIP_RETRIES) {
+            await sleep(1000 * Math.pow(3, attempt));
+            continue;
+          }
+          return "failed";
+        }
+        return res;
+      } catch (e) {
+        if (attempt < CLIP_RETRIES) {
+          await sleep(1000 * Math.pow(3, attempt));
+          continue;
+        }
+        console.warn("[clip-all] clip error", offer.offerId, e);
+        return "failed";
+      }
+    }
+    return "failed";
+  }
+
+  function markCacheClipped(offerIds) {
+    if (!offerIds.length) return;
+    try {
+      const raw = localStorage.getItem("abJ4uCoupons");
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      const oc = data.objCoupons;
+      if (!oc || typeof oc !== "object") return;
+      const idSet = new Set(offerIds.map(String));
+      for (const [k, v] of Object.entries(oc)) {
+        const id = String(v?.offerId || v?.offer_id || v?.id || k);
+        if (idSet.has(id)) v.status = "C";
+      }
+      if (Array.isArray(data.arrClippedCoupons)) {
+        for (const id of idSet) {
+          if (!data.arrClippedCoupons.includes(id)) data.arrClippedCoupons.push(id);
+        }
+      }
+      localStorage.setItem("abJ4uCoupons", JSON.stringify(data));
+    } catch (e) { /* ignore */ }
   }
 
   // ---- UI -----------------------------------------------------------------
@@ -198,7 +282,7 @@
     });
     el.innerHTML = `<div style="background:#1a2129;color:#eef2f5;padding:24px 28px;border-radius:14px;
       text-align:center;min-width:280px;box-shadow:0 12px 40px rgba(0,0,0,.5)">
-      <div id="cc-msg" style="margin-bottom:12px;line-height:1.5">Finding all coupons…</div>
+      <div id="cc-msg" style="margin-bottom:12px;line-height:1.5">Loading offer list…</div>
       <div id="cc-count" style="font-weight:600;margin-bottom:14px">0 / 0</div>
       <div style="background:#2b3947;border-radius:8px;height:14px;width:260px;margin:0 auto 14px">
         <div id="cc-bar" style="background:#38c172;height:100%;width:0%;border-radius:8px;transition:width .2s"></div>
@@ -210,13 +294,33 @@
     return el;
   }
 
+  function finishOverlay(ov, msgText, countText) {
+    const msg = ov.querySelector("#cc-msg");
+    const cnt = ov.querySelector("#cc-count");
+    msg.textContent = msgText;
+    if (countText != null) cnt.textContent = countText;
+    ov.querySelector("#cc-stop").textContent = "Close";
+    ov.querySelector("#cc-stop").onclick = () => ov.remove();
+  }
+
   let running = false;
   async function clipAll() {
     if (running) return;
+    if (!isCouponsPath()) {
+      const ok = confirm(
+        "This doesn't look like the coupons & deals page. Open for-U coupons first for best results.\n\nContinue anyway?"
+      );
+      if (!ok) return;
+    }
     running = true;
     const s = getSession();
     if (!s.token) {
       alert("Couldn't read your store session. Make sure you're signed in, then reload the coupons page.");
+      running = false;
+      return;
+    }
+    if (!/^\d+$/.test(s.storeId)) {
+      alert("Couldn't read your store ID. Open the coupons & deals page while signed in, reload, then try again.");
       running = false;
       return;
     }
@@ -227,58 +331,79 @@
     let stop = false;
     ov.querySelector("#cc-stop").onclick = () => { stop = true; };
 
-    const all = await enumerateAll(s);
+    const { offers: all, source, galleryError } = await enumerateAll(s);
     const offers = all.filter((o) => String(o.status || "").toUpperCase() !== "C");
     if (!all.length) {
-      msg.textContent = "No coupons found. Open the coupons & deals page, reload, then try again.";
-      ov.querySelector("#cc-stop").textContent = "Close";
-      ov.querySelector("#cc-stop").onclick = () => ov.remove();
+      if (galleryError) {
+        finishOverlay(ov, `Couldn't load offers (${galleryError}). Reload the coupons page and try again.`);
+      } else {
+        finishOverlay(ov, "No coupons found. Open the coupons & deals page, reload, then try again.");
+      }
       running = false;
       return;
     }
     if (!offers.length) {
-      msg.textContent = "All caught up! 🎉";
-      cnt.textContent = `${all.length} coupons — all already clipped.`;
+      finishOverlay(ov, "All caught up! 🎉", `${all.length} coupons — all already clipped.`);
       bar.style.width = "100%";
-      ov.querySelector("#cc-stop").textContent = "Close";
-      ov.querySelector("#cc-stop").onclick = () => ov.remove();
       running = false;
       return;
     }
-    msg.textContent = `Clipping ${offers.length} new coupons… please don't close this tab.`;
+    const etaMin = Math.max(1, Math.ceil((offers.length * AVG_CLIP_SEC) / 60));
+    const srcNote = source === "cache" ? " (using page cache)" : source === "dom" ? " (from visible buttons)" : "";
+    msg.textContent = `Clipping ${offers.length} new coupons (~${etaMin} min)${srcNote}… please don't close this tab.`;
 
     let done = 0, clipped = 0, already = 0, failed = 0, blocked = false;
     const total = offers.length;
     const queue = offers.slice();
+    const clippedIds = [];
 
     async function worker() {
       while (queue.length && !stop && !blocked) {
         const offer = queue.shift();
         const res = await clipOne(s, offer);
         if (res === "blocked") { blocked = true; break; }
-        if (res === "clipped") clipped++;
+        if (res === "clipped") { clipped++; clippedIds.push(offer.offerId); }
         else if (res === "already") already++;
         else failed++;
         done++;
-        cnt.textContent = `${done} / ${total}`;
+        const left = total - done;
+        cnt.textContent = left ? `${done} / ${total} (~${Math.ceil((left * AVG_CLIP_SEC) / 60)} min left)` : `${done} / ${total}`;
         bar.style.width = `${(done / total) * 100}%`;
         await sleep(gap());
       }
     }
     await Promise.all(Array.from({ length: CLIP_CONCURRENCY }, worker));
 
-    try { localStorage.removeItem("abJ4uCoupons"); } catch {}
+    markCacheClipped(clippedIds);
+    // Full successful run: clear cache so the site refreshes next visit.
+    if (!blocked && !stop && failed === 0) {
+      try { localStorage.removeItem("abJ4uCoupons"); } catch {}
+    }
+
+    const left = total - done;
+    const summary = `Clipped ${clipped} · already had ${already} · failed ${failed} (of ${total})`;
     if (blocked) {
-      msg.textContent = "The store's bot protection paused us (Error 15). Your account is fine — wait a few minutes, reload, and run it again to finish the rest.";
-    } else
-    msg.textContent = stop ? "Stopped." : "Done!";
-    cnt.textContent = `Clipped ${clipped} · already had ${already} · failed ${failed} (of ${total})`;
-    ov.querySelector("#cc-stop").textContent = "Close";
-    ov.querySelector("#cc-stop").onclick = () => ov.remove();
+      finishOverlay(
+        ov,
+        `The store's bot protection paused us (Error 15). Clipped ${clipped} of ${total}` +
+          (left ? `; ${left} left` : "") +
+          " — wait a few minutes, reload, and run again to finish.",
+        summary
+      );
+    } else if (stop) {
+      finishOverlay(ov, left ? `Stopped. ${left} left — run again to finish.` : "Stopped.", summary);
+    } else {
+      finishOverlay(ov, "Done!", summary);
+    }
     running = false;
   }
 
   function addButton() {
+    if (!isCouponsPath()) {
+      const existing = document.getElementById("cc-fab");
+      if (existing) existing.remove();
+      return;
+    }
     if (document.getElementById("cc-fab")) return;
     const b = document.createElement("button");
     b.id = "cc-fab";
@@ -293,8 +418,14 @@
     document.body.appendChild(b);
   }
 
+  let fabTimer = null;
+  function scheduleAddButton() {
+    if (fabTimer) clearTimeout(fabTimer);
+    fabTimer = setTimeout(addButton, 150);
+  }
+
   addButton();
-  new MutationObserver(addButton).observe(document.body, { childList: true });
+  new MutationObserver(scheduleAddButton).observe(document.body, { childList: true, subtree: true });
   if (typeof GM_registerMenuCommand === "function") {
     GM_registerMenuCommand("Clip all coupons", clipAll);
   }

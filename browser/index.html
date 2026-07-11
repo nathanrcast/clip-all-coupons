@@ -41,14 +41,6 @@
   <h1>🎫 Coupon Clipper</h1>
   <p class="tag">Clip <b>every</b> coupon in one tap — on your own account.</p>
 
-  <div class="note">
-    🛒 Shop at <b>Fry's, Ralphs, King Soopers, Smith's, Fred Meyer, QFC, Dillons</b> or another
-    <b>Kroger</b> store? There's a Kroger version too — on <b>Android</b> tap
-    <a class="lnk" href="clip-all-coupons-kroger.user.js">install the Kroger clipper</a> (add it in
-    step 2 the same way); on <b>iPhone</b> pick <b>Kroger family</b> in step 1 below. It clips up to
-    ~150 at a time — just tap again for more.
-  </div>
-
   <div class="pick">
     <button id="b-and" onclick="pick('and')">📱 Android</button>
     <button id="b-ios" onclick="pick('ios')">🍎 iPhone / iPad</button>
@@ -56,6 +48,10 @@
 
   <!-- ANDROID -->
   <section id="p-and" class="panel">
+    <div class="pick">
+      <button id="a-alb" onclick="andStore('alb')">🛒 Safeway / Albertsons</button>
+      <button id="a-kro" onclick="andStore('kro')">🛒 Kroger family</button>
+    </div>
     <div class="step">
       <h3><span class="num">1</span> Get the Firefox app</h3>
       <p>This only works in <b>Firefox</b> (not Chrome) on Android.</p>
@@ -70,15 +66,16 @@
     </div>
     <div class="step">
       <h3><span class="num">3</span> Add the clipper</h3>
-      <p>Tap below, then tap <b>Confirm installation</b>.</p>
-      <a class="btn" href="clip-all-coupons.user.js">Install the Clipper</a>
+      <p>Tap below, then tap <b>Confirm installation</b>. Installs from GitHub (auto-updates from there too).</p>
+      <a class="btn" id="and-install" href="https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons.user.js">Install the Clipper</a>
       <p class="hint">You only do steps 1–3 once.</p>
     </div>
     <div class="step">
       <h3><span class="num">4</span> Use it</h3>
-      <p>1. In Firefox, go to <a class="lnk" href="https://www.safeway.com/foru/coupons-deals.html" target="_blank" rel="noopener">Safeway coupons &amp; deals</a> and <b>sign in</b>.</p>
-      <p>2. Tap the red <b>✂ Clip all coupons</b> button at the bottom-right.</p>
-      <p>3. Wait for "Done!" — that's it. 🎉</p>
+      <p>1. In Firefox, go to <a class="lnk" id="and-store-link" href="https://www.safeway.com/foru/coupons-deals.html" target="_blank" rel="noopener">Safeway coupons &amp; deals</a> and <b>sign in</b>.</p>
+      <p>2. Tap the <b>✂ Clip all coupons</b> button at the bottom-right.</p>
+      <p>3. Wait for "Done!" — large Albertsons lists can take several minutes. 🎉</p>
+      <p class="hint" id="and-krohint" style="display:none">Kroger shows ~150 coupons at a time — when it's done, just run it again for the next batch.</p>
     </div>
   </section>
 
@@ -112,7 +109,7 @@
       <h3><span class="num">4</span> Use it</h3>
       <p>1. In Safari, go to <a class="lnk" id="ios-store-link" href="https://www.safeway.com/foru/coupons-deals.html" target="_blank" rel="noopener">Safeway coupons &amp; deals</a> and <b>sign in</b>.</p>
       <p>2. Tap the address bar, type <b id="ios-name2">Clip</b>, and tap the <b id="ios-name3">Clip Coupons</b> bookmark.</p>
-      <p>3. Wait for "Done!" 🎉</p>
+      <p>3. Wait for "Done!" — large Albertsons lists can take several minutes. 🎉</p>
       <p class="hint" id="ios-krohint" style="display:none">Kroger shows ~150 coupons at a time — when it's done, just tap the bookmark again for the next batch.</p>
     </div>
   </section>
@@ -126,6 +123,9 @@
 </div>
 
 <script>
+  var GH_ALB = 'https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons.user.js';
+  var GH_KRO = 'https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons-kroger.user.js';
+
   function pick(p){
     document.getElementById('p-and').classList.toggle('show',p==='and');
     document.getElementById('p-ios').classList.toggle('show',p==='ios');
@@ -133,11 +133,25 @@
     document.getElementById('b-ios').classList.toggle('active',p==='ios');
     try{location.hash=p}catch(e){}
   }
-  // Default to the phone we think you're on.
   var guess = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios' : 'and';
   pick((location.hash||'').replace('#','') || guess);
 
-  // iOS store selection (Albertsons family vs Kroger family).
+  var andStoreSel='alb';
+  function andStore(s){
+    andStoreSel=s;
+    var k = s==='kro';
+    document.getElementById('a-alb').classList.toggle('active',!k);
+    document.getElementById('a-kro').classList.toggle('active',k);
+    var install=document.getElementById('and-install');
+    install.href = k ? GH_KRO : GH_ALB;
+    install.textContent = k ? 'Install the Kroger Clipper' : 'Install the Clipper';
+    var link=document.getElementById('and-store-link');
+    link.textContent = k ? 'Kroger coupons' : 'Safeway coupons & deals';
+    link.href = k ? 'https://www.kroger.com/savings/cl/coupons/' : 'https://www.safeway.com/foru/coupons-deals.html';
+    document.getElementById('and-krohint').style.display = k ? 'block' : 'none';
+  }
+  andStore('alb');
+
   var iosStore='alb';
   function store(s){
     iosStore=s;
@@ -153,19 +167,28 @@
     link.textContent = k?'Kroger coupons':'Safeway coupons & deals';
     link.href = k?'https://www.kroger.com/savings/cl/coupons/':'https://www.safeway.com/foru/coupons-deals.html';
     document.getElementById('ios-krohint').style.display = k?'block':'none';
-    document.getElementById('copymsg').innerHTML='Use <b>Safari</b> for the next steps.';
+    document.getElementById('copymsg').textContent='Use Safari for the next steps.';
   }
   store('alb');
 
   async function copyCode(){
     var msg=document.getElementById('copymsg');
     var file = iosStore==='kro' ? 'kroger-bookmarklet.txt' : 'bookmarklet.txt';
+    msg.textContent='Copying…';
     try{
       var txt=await (await fetch(file)).text();
       await navigator.clipboard.writeText(txt);
-      msg.innerHTML='<b style="color:#38c172">Copied!</b> Now do step 2.';
+      msg.textContent='Copied! Now do step 2.';
+      msg.style.color='#38c172';
     }catch(e){
-      msg.innerHTML='Couldn’t auto-copy. <a class="lnk" href="'+file+'" target="_blank">Open the code</a>, select all, and copy it.';
+      msg.style.color='';
+      msg.textContent='';
+      msg.appendChild(document.createTextNode("Couldn't auto-copy. "));
+      var a=document.createElement('a');
+      a.className='lnk'; a.href=file; a.target='_blank'; a.rel='noopener';
+      a.textContent='Open the code';
+      msg.appendChild(a);
+      msg.appendChild(document.createTextNode(', select all, and copy it.'));
     }
   }
 </script>

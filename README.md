@@ -65,6 +65,7 @@ coupons at a time, one run clips up to ~150 — run it again for more. No networ
 | `browser/gallery-probe.js` | Albertsons read-only console probe of the offer-data shape (clips nothing) |
 | `browser/kroger-probe.js` | Kroger console probe: captures the live clip API + button selectors (clips nothing) |
 | `browser/index.html` | optional mobile-first setup guide page you can host for others |
+| `browser/nginx.conf` | allowlist + security headers for the guide host |
 | `browser/deploy.compose.yml` | optional: nginx + Cloudflare Tunnel to serve the guide page |
 
 See `browser/README.md` for details and the optional hosting setup.

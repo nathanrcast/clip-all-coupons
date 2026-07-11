@@ -17,6 +17,17 @@
     "button.CouponCard-button.kds-Button--primary",
     'button[data-testid="coupon-add-button"]',
   ];
+
+  function isCouponsPath() {
+    var p = location.pathname.toLowerCase();
+    return /\/savings\b/.test(p) || /coupon/.test(p) || /\/cl\//.test(p);
+  }
+
+  function couponsRoot() {
+    return document.querySelector('[data-testid*="coupon" i]') ||
+      document.querySelector("main") || document.body;
+  }
+
   function clipped(b) {
     var t = (b.textContent || "").trim().toLowerCase();
     var a = (b.getAttribute("aria-label") || "").toLowerCase();
@@ -28,12 +39,19 @@
     var a = (b.getAttribute("aria-label") || "").toLowerCase();
     return t === "clip" || t === "clip coupon" || /^clip\b/.test(a);
   }
-  function collect() {
-    var set = new Set();
+  function countClipCandidates() {
+    var root = couponsRoot(), n = 0;
     SELS.forEach(function (sel) {
-      document.querySelectorAll(sel).forEach(function (b) { if (!clipped(b)) set.add(b); });
+      root.querySelectorAll(sel).forEach(function (b) { if (!clipped(b)) n++; });
     });
-    document.querySelectorAll("button").forEach(function (b) { if (clippable(b) && !clipped(b)) set.add(b); });
+    return n;
+  }
+  function collect() {
+    var root = couponsRoot(), set = new Set();
+    SELS.forEach(function (sel) {
+      root.querySelectorAll(sel).forEach(function (b) { if (!clipped(b)) set.add(b); });
+    });
+    root.querySelectorAll("button").forEach(function (b) { if (clippable(b) && !clipped(b)) set.add(b); });
     return Array.prototype.slice.call(set);
   }
   function overlay() {
@@ -50,35 +68,52 @@
     document.body.appendChild(el);
     return el;
   }
+
   (async function () {
+    if (!isCouponsPath()) {
+      if (!confirm("This doesn't look like the Kroger coupons page. Continue anyway?")) {
+        window.__ccRunning = false; return;
+      }
+    }
     var ov = overlay(), msg = ov.querySelector("#cc-msg"), cnt = ov.querySelector("#cc-count"), bar = ov.querySelector("#cc-bar"), stop = false;
     ov.querySelector("#cc-stop").onclick = function () { stop = true; };
-    function finish(text) {
+    function finish(text, countText) {
       msg.textContent = text;
+      if (countText != null) cnt.textContent = countText;
       var sb = ov.querySelector("#cc-stop"); sb.textContent = "Close"; sb.onclick = function () { ov.remove(); };
       window.__ccRunning = false;
     }
-    // load all lazy-rendered cards
+    msg.textContent = "Loading all coupons (scrolling the page)…";
     var last = -1, stable = 0;
     for (var i = 0; i < 40 && stable < 3 && !stop; i++) {
       window.scrollTo(0, document.body.scrollHeight);
       await sleep(700);
-      var n = document.querySelectorAll("button").length;
+      var n = countClipCandidates();
       stable = n === last ? stable + 1 : 0; last = n;
-      cnt.textContent = collect().length + " found";
+      cnt.textContent = n + " found";
     }
     window.scrollTo(0, 0);
     if (stop) return finish("Stopped.");
-    var done = 0, lastRemaining = -1, idle = 0;
+
+    var btns = collect();
+    if (!btns.length) return finish("No unclipped coupons found. If the page hadn't finished loading, reload and try again.");
+    var runTotal = btns.length, attempts = 0, verified = 0, lastRemaining = -1, idle = 0;
     for (var pass = 0; pass < 8 && !stop; pass++) {
-      var btns = collect();
-      if (!btns.length) break;
-      msg.textContent = "Clipping " + btns.length + " coupons… please don't close this tab.";
-      var total = done + btns.length;
+      if (pass > 0) {
+        btns = collect();
+        if (!btns.length) break;
+      }
+      msg.textContent = "Clipping coupons… please don't close this tab.";
       for (var j = 0; j < btns.length && !stop; j++) {
-        try { btns[j].scrollIntoView({ block: "center" }); btns[j].click(); done++; } catch (e) {}
-        cnt.textContent = done + " / " + total;
-        bar.style.width = Math.min(100, (done / total) * 100) + "%";
+        try {
+          btns[j].scrollIntoView({ block: "center" });
+          btns[j].click();
+          attempts++;
+          await sleep(120);
+          if (clipped(btns[j]) || !btns[j].isConnected) verified++;
+        } catch (e) {}
+        cnt.textContent = attempts + " attempted · " + verified + " clipped (of ~" + runTotal + ")";
+        bar.style.width = Math.min(100, (attempts / runTotal) * 100) + "%";
         await sleep(gap());
       }
       await sleep(1200);
@@ -87,8 +122,9 @@
       if (idle >= 2) break;
     }
     bar.style.width = "100%";
-    if (!done) finish("No unclipped coupons found. If the page hadn't finished loading, reload and try again.");
-    else finish(stop ? "Stopped — clipped " + done + " so far." :
-      "Done! Clipped " + done + " coupon" + (done === 1 ? "" : "s") + ". (Kroger shows ~150 at a time — tap again for more.)");
+    if (!attempts) finish("No unclipped coupons found. If the page hadn't finished loading, reload and try again.");
+    else finish(stop ? ("Stopped — " + verified + " clipped so far.") :
+      ("Done! Clipped " + verified + " coupon" + (verified === 1 ? "" : "s") + ". (Kroger shows ~150 at a time — tap again for more.)"),
+      verified + " clipped · " + attempts + " attempted");
   })();
 })();

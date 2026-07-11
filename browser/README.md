@@ -27,9 +27,11 @@ phones can reach it, then share **one link**.
    creates automatically; don't hand-make an A record for the hostname (it shadows the tunnel → 525/1016).
 5. Share the tunnel's public URL.
 
-> Auto-updates (`@downloadURL`/`@updateURL`) point at this repo's GitHub raw URL, so editing the
-> userscript here and pushing is enough — installed copies pull the new version. The "Install the
-> Clipper" button on the guide page is a relative link, so it serves whatever's deployed at your host.
+> **Install trust:** the guide's Android "Install" buttons point at this repo's **GitHub raw**
+> URLs (same as `@downloadURL`/`@updateURL`). Nginx on the guide host allowlists only
+> `index.html` + bookmarklet `.txt` files — probes, sources, and `.user.js` return 404 so the
+> tunnel is not a mutable userscript CDN. Optional LAN port `8551` is commented out in compose;
+> uncomment if you need LAN access without the tunnel.
 
 ## Userscript (recommended — Firefox desktop + Firefox Android)
 

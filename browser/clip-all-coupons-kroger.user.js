@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Clip-All Coupons — Kroger
 // @namespace    https://github.com/nathanrcast/clip-all-coupons
-// @version      0.1.0
+// @version      0.2.0
 // @description  Clip ALL of your Kroger-family digital coupons (Fry's, Ralphs, King Soopers, Smith's, Fred Meyer, QFC, Dillons…) in one tap. Firefox + mobile friendly.
 // @author       ncastel
 // @homepageURL  https://github.com/nathanrcast/clip-all-coupons
@@ -45,16 +45,25 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const gap = () => MIN_GAP_MS + Math.random() * (MAX_GAP_MS - MIN_GAP_MS);
 
-  // Kroger Design System clip-button selectors. Classes have drifted across
-  // redesigns, so match several known variants; the text/aria pass below is the
-  // resilient fallback. If a future redesign breaks these, the probe reports the
-  // current class names.
   const CLIP_SELECTORS = [
     "button.kds-Button--favorable",
     "button.CouponCard-button.kds-Button--primary",
     'button[data-testid="coupon-add-button"]',
   ];
-  // A button is "already done" (skip it) when it reads as clipped/added.
+
+  function isCouponsPath() {
+    const p = location.pathname.toLowerCase();
+    return /\/savings\b/.test(p) || /coupon/.test(p) || /\/cl\//.test(p);
+  }
+
+  function couponsRoot() {
+    return (
+      document.querySelector('[data-testid*="coupon" i]') ||
+      document.querySelector("main") ||
+      document.body
+    );
+  }
+
   const isClipped = (b) => {
     const t = (b.textContent || "").trim().toLowerCase();
     const a = (b.getAttribute("aria-label") || "").toLowerCase();
@@ -65,35 +74,47 @@
       /clipped|added|unclip/.test(a)
     );
   };
-  // A button is a clip target when it looks like an unclipped "Clip" action.
+
   const looksClippable = (b) => {
     const t = (b.textContent || "").trim().toLowerCase();
     const a = (b.getAttribute("aria-label") || "").toLowerCase();
     return t === "clip" || t === "clip coupon" || /^clip\b/.test(a);
   };
 
+  /** Cheap count for scroll stability — known selectors only, scoped to coupons root. */
+  function countClipCandidates() {
+    const root = couponsRoot();
+    let n = 0;
+    for (const sel of CLIP_SELECTORS) {
+      root.querySelectorAll(sel).forEach((b) => { if (!isClipped(b)) n++; });
+    }
+    return n;
+  }
+
   function collectClipButtons() {
+    const root = couponsRoot();
     const set = new Set();
     for (const sel of CLIP_SELECTORS) {
-      document.querySelectorAll(sel).forEach((b) => { if (!isClipped(b)) set.add(b); });
+      root.querySelectorAll(sel).forEach((b) => { if (!isClipped(b)) set.add(b); });
     }
-    document.querySelectorAll("button").forEach((b) => {
+    // Text/aria fallback scoped to root (not the whole document).
+    root.querySelectorAll("button").forEach((b) => {
       if (looksClippable(b) && !isClipped(b)) set.add(b);
     });
     return [...set];
   }
 
-  // Kroger lazy-loads coupon cards on scroll. Scroll to the bottom until the
-  // card count stops growing (or we hit a sane ceiling), so we see them all.
-  async function loadAllCards(onProgress) {
+  // Kroger lazy-loads coupon cards on scroll. Scroll until clip-candidate count
+  // stabilizes (or we hit a sane ceiling). Honors shouldStop so Stop works mid-load.
+  async function loadAllCards(onProgress, shouldStop) {
     let last = -1, stable = 0;
-    for (let i = 0; i < 40 && stable < 3; i++) {
+    for (let i = 0; i < 40 && stable < 3 && !shouldStop(); i++) {
       window.scrollTo(0, document.body.scrollHeight);
       await sleep(700);
-      const n = document.querySelectorAll("button").length;
+      const n = countClipCandidates();
       stable = n === last ? stable + 1 : 0;
       last = n;
-      onProgress(collectClipButtons().length);
+      onProgress(n);
     }
     window.scrollTo(0, 0);
   }
@@ -120,6 +141,12 @@
   let running = false;
   async function clipAll() {
     if (running) return;
+    if (!isCouponsPath()) {
+      const ok = confirm(
+        "This doesn't look like the Kroger coupons page (savings / coupons). Open that page first for best results.\n\nContinue anyway?"
+      );
+      if (!ok) return;
+    }
     running = true;
     const ov = overlay();
     const msg = ov.querySelector("#cc-msg");
@@ -128,8 +155,9 @@
     let stop = false;
     ov.querySelector("#cc-stop").onclick = () => { stop = true; };
 
-    const finish = (text) => {
+    const finish = (text, countText) => {
       msg.textContent = text;
+      if (countText != null) cnt.textContent = countText;
       const sb = ov.querySelector("#cc-stop");
       sb.textContent = "Close";
       sb.onclick = () => ov.remove();
@@ -137,43 +165,64 @@
     };
 
     msg.textContent = "Loading all coupons (scrolling the page)…";
-    await loadAllCards((n) => { cnt.textContent = n + " found"; });
+    await loadAllCards((n) => { cnt.textContent = n + " found"; }, () => stop);
     if (stop) return finish("Stopped.");
 
-    // Clip in passes: clicking re-renders the list, so re-collect between passes
-    // and keep going until nothing clippable remains or no progress is made.
-    let clipped = 0, lastRemaining = -1, idleClicks = 0;
+    // First pass size is the progress denominator (avoids jumping totals).
+    let buttons = collectClipButtons();
+    if (!buttons.length) {
+      return finish("No unclipped coupons found. If the page hadn't finished loading, reload and try again.");
+    }
+    const runTotal = buttons.length;
+    let attempts = 0, verified = 0, lastRemaining = -1, idlePasses = 0;
+
     for (let pass = 0; pass < 8 && !stop; pass++) {
-      const buttons = collectClipButtons();
-      if (!buttons.length) break;
-      if (pass === 0 && buttons.length === 0) break;
-      msg.textContent = "Clipping " + buttons.length + " coupons… please don't close this tab.";
-      const total = clipped + buttons.length;
+      if (pass > 0) {
+        buttons = collectClipButtons();
+        if (!buttons.length) break;
+      }
+      msg.textContent = "Clipping coupons… please don't close this tab.";
       for (const b of buttons) {
         if (stop) break;
-        try { b.scrollIntoView({ block: "center" }); b.click(); clipped++; } catch (e) {}
-        cnt.textContent = clipped + " / " + total;
-        bar.style.width = Math.min(100, (clipped / total) * 100) + "%";
+        try {
+          b.scrollIntoView({ block: "center" });
+          b.click();
+          attempts++;
+          // Brief settle then check if the button now looks clipped.
+          await sleep(120);
+          if (isClipped(b) || !b.isConnected) verified++;
+        } catch (e) { /* ignore */ }
+        cnt.textContent = `${attempts} attempted · ${verified} clipped (of ~${runTotal})`;
+        bar.style.width = Math.min(100, (attempts / runTotal) * 100) + "%";
         await sleep(gap());
       }
-      await sleep(1200); // let the list settle / lazy-load more
+      await sleep(1200);
       const remaining = collectClipButtons().length;
-      idleClicks = remaining === lastRemaining ? idleClicks + 1 : 0;
+      idlePasses = remaining === lastRemaining ? idlePasses + 1 : 0;
       lastRemaining = remaining;
-      if (idleClicks >= 2) break; // no forward progress — stop hammering
+      if (idlePasses >= 2) break;
     }
 
     bar.style.width = "100%";
-    if (clipped === 0) {
+    if (attempts === 0) {
       finish("No unclipped coupons found. If the page hadn't finished loading, reload and try again.");
     } else {
-      finish(stop ? "Stopped — clipped " + clipped + " so far." :
-        "Done! Clipped " + clipped + " coupon" + (clipped === 1 ? "" : "s") +
-        ". (Kroger renders ~150 at a time — run again for more.)");
+      const summary = `${verified} clipped · ${attempts} attempted`;
+      finish(
+        stop
+          ? `Stopped — ${verified} clipped so far.`
+          : `Done! Clipped ${verified} coupon${verified === 1 ? "" : "s"}. (Kroger renders ~150 at a time — run again for more.)`,
+        summary
+      );
     }
   }
 
   function addButton() {
+    if (!isCouponsPath()) {
+      const existing = document.getElementById("cc-fab");
+      if (existing) existing.remove();
+      return;
+    }
     if (document.getElementById("cc-fab")) return;
     const b = document.createElement("button");
     b.id = "cc-fab";
@@ -191,7 +240,15 @@
   if (typeof GM_registerMenuCommand === "function") {
     GM_registerMenuCommand("Clip all coupons", clipAll);
   }
+
+  let fabTimer = null;
+  function scheduleAddButton() {
+    if (running) return;
+    if (fabTimer) clearTimeout(fabTimer);
+    fabTimer = setTimeout(addButton, 200);
+  }
+
   addButton();
-  // Kroger is a SPA — re-add the button after client-side navigation.
-  new MutationObserver(() => addButton()).observe(document.documentElement, { childList: true, subtree: true });
+  // Kroger is a SPA — re-add the button after client-side navigation (debounced).
+  new MutationObserver(scheduleAddButton).observe(document.body, { childList: true, subtree: true });
 })();
