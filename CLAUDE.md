@@ -7,9 +7,9 @@ unrelated, so they share only the overlay/progress UX and the serial+jittered cl
 - **Kroger** (Fry's, Ralphs, King Soopers, Smith's…) — no "all offers" API; **clicks on-page clip
   buttons**, capped ~150/run (Kroger lazy-renders ~150). DOM-click is what every working Kroger
   clipper does (kro-clipper, kroger-cli, the Ralphs gist).
-- **Target Circle** — loyalty offer JSON API (`api.target.com`) with DOM Save/Activate fallback.
-  Most store deals auto-apply since 2024-04; this saves manufacturer coupons / bonuses / rebates.
-  Account save-cap still exists (`/circle/maxedDeals`).
+- **Target Circle** — **DOM-first** Save/Apply clicks on Deals (`/deals/all?facet=tap_to_apply`).
+  Most store deals auto-apply since 2024-04; this saves manufacturer coupons / bonuses.
+  Account save-cap still exists (75 slots seen live). Optional saved-list API for slot usage only.
 
 ## Confirmed for-U API — Albertsons banners (probed 2026-06-15, store 1487, Firefox)
 - **Session globals (page MAIN world):** token `window.AB.userInfo.SWY_SHOP_TOKEN`; `storeId` from
@@ -45,24 +45,21 @@ unrelated, so they share only the overlay/progress UX and the serial+jittered cl
   (`/p/np/<division>/Kroger/coupons` + `/coupon/clip?id&clipsource=KWL&signature`) exists but is old
   and division-specific — not used.
 
-## Confirmed Target Circle API (probed from public page bundles / `__CONFIG__`, 2026-08-02)
-- **Config:** `window.__CONFIG__.services.apiPlatform` (every Target page). Public web-client keys
-  live in `circleOfferLoyaltyKeys` (`loyaltyApiKey`, `loyaltyClientKey`) — same values the site
-  sends; not user secrets. Fallbacks hardcoded in the adapter match the live page.
-- **Base:** `https://api.target.com` + `credentials: "include"` (logged-in session cookies).
-- **Headers:** `Authorization: <loyaltyClientKey>`, `x-api-key: <loyaltyApiKey>`.
-- **Enumerate:** `GET loyalty_offer_groups/v1/categories` (+ `/{id}` for offers);
-  `GET loyalty_offer_groups/v1/collections` (+ `/{id}`);
-  `GET loyalty_guest_offerlists/v1/external` (already-saved).
-- **Save/clip:** `POST loyalty_guest_offerlists/v1/external/{offerId}?location_id=<storeId>`
-  (`location_id` optional when store unknown). Delete is same path with DELETE.
-- **Product note:** store Circle deals auto-apply at checkout; manufacturer coupons + bonuses still
-  need save/activate. Save limit still wired (`/circle/maxedDeals`) — stop cleanly on capacity errors.
-- **DOM fallback selectors:** `button[data-test="save-button"]` + text/aria
-  `Save|Activate|Apply` (+ optional `offer|deal|bonus|coupon`); skip saved/applied/remove.
-  "Load more" + scroll for lazy grids. `browser/target-probe.js` re-confirms selectors + live calls.
-- **Not live-tested on a signed-in household account** — API shape is from Target's shipped JS;
-  run the probe once signed in to confirm headers/body and tweak if needed.
+## Confirmed Target Circle (live HAR 2026-08-02 on `/deals/all?facet=tap_to_apply`)
+- **Works:** `GET https://api.target.com/loyalty_guest_offerlists/v1/external` with
+  `Authorization: <loyaltyClientKey>`, `x-api-key: <loyaltyApiKey>`, `credentials: "include"`.
+  Returns saved offers + `user_meta_data.total_filled_slots` / `total_earned_slots` (75 cap seen).
+- **Broken for clients:** `GET loyalty_offer_groups/v1/categories` — OPTIONS preflight **502**
+  ("no upstream"), so browser `fetch` fails (status 0). **Do not enumerate via offer_groups.**
+  v0.1.0 API-first path threw on that failure and never reached DOM fallback — fixed in v0.2.0.
+- **Save/clip API** still exists in site JS (`POST …/loyalty_guest_offerlists/v1/external/{offerId}`)
+  but grid offers are slingshot/CDUI-rendered; adapter is **DOM-first**.
+- **DOM selectors (live):** `button[data-test="save-circle-offer-button"]` (primary);
+  CTA language flag may label buttons `Save` / `Apply` / `Save offer` with aria
+  `Save <title>` or `Apply <title>`. Skip `Applied` / `Offer saved` / `Remove`.
+  Best page: `https://www.target.com/deals/all?facet=tap_to_apply` ("Coupons to apply").
+- **Config keys:** `window.__CONFIG__.services.apiPlatform.circleOfferLoyaltyKeys` (public
+  web-client values; hardcoded fallbacks match the page).
 
 ## Gotchas
 1. **Firefox + GM_* grant sandboxing (Albertsons / Target):** Violentmonkey hides page globals behind

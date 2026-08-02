@@ -1,17 +1,13 @@
 /* Target Circle PROBE — clips/saves nothing on its own. Discovers the live API + DOM.
  *
- * Target Circle embeds a clean loyalty offer API in window.__CONFIG__ (probed from
- * public page JS, 2026-08-02):
- *   GET  api.target.com/loyalty_guest_offerlists/v1/external          (saved)
- *   POST api.target.com/loyalty_guest_offerlists/v1/external/{id}     (save/clip)
- *   DEL  api.target.com/loyalty_guest_offerlists/v1/external/{id}
- *   GET  api.target.com/loyalty_offer_groups/v1/categories[/{id}]
- *   GET  api.target.com/loyalty_offer_groups/v1/collections[/{id}]
- * Auth: public loyaltyClientKey + loyaltyApiKey headers + session cookies
- * (credentials: "include"). Save cap still exists (/circle/maxedDeals).
+ * Live HAR 2026-08-02 on /deals/all?facet=tap_to_apply:
+ *   GET  api.target.com/loyalty_guest_offerlists/v1/external     → 200 (saved + slot meta)
+ *   POST api.target.com/loyalty_guest_offerlists/v1/external/{id} (save; site JS)
+ *   GET  api.target.com/loyalty_offer_groups/v1/categories       → OPTIONS 502 (broken)
+ * Primary DOM: button[data-test="save-circle-offer-button"] (Save/Apply).
  *
- * HOW TO RUN (Firefox or Chrome), signed in on Circle deals
- * (e.g. https://www.target.com/circle/offers → redirects to deals):
+ * HOW TO RUN (Firefox or Chrome), signed in on Coupons to apply:
+ *   https://www.target.com/deals/all?facet=tap_to_apply
  *   1. Open DevTools (F12) → Console. Paste this whole file, press Enter.
  *   2. Leave it running. Manually save/activate ONE offer on the page.
  *   3. Click the floating "📋 Probe report" button (bottom-right), review, then copy.
@@ -68,13 +64,14 @@
   };
 
   const selectors = [
+    'button[data-test="save-circle-offer-button"]',
     'button[data-test="save-button"]',
-    'button[data-test*="offer" i]',
-    'button[data-test*="deal" i]',
-    'button[data-test*="bonus" i]',
+    'button[data-test="cta-offer"]',
+    '[data-test="save-circle-offer-button"]',
+    '[data-test="offer-card"] button',
   ];
-  const SAVE_RE = /^(save|activate|apply)(\s+(offer|deal|bonus|coupon))?$/i;
-  const DONE_RE = /saved|applied|activated|remove|unsave|added|in wallet/i;
+  const SAVE_RE = /^(save|activate|apply)\b/i;
+  const DONE_RE = /^(offer\s+)?(saved|applied|activated)\b|^remove\b|applied in cart/i;
 
   const configReport = () => {
     const api = window.__CONFIG__?.services?.apiPlatform;

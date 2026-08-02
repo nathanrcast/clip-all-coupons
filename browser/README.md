@@ -61,12 +61,11 @@ the current selectors + any clip API call.
 
 ## Target Circle
 
-API-first adapter (`clip-all-coupons-target.user.js` / `target-bookmarklet.txt`). Reads public
-web-client keys from `window.__CONFIG__.services.apiPlatform`, enumerates via
-`loyalty_offer_groups`, saves via `POST loyalty_guest_offerlists/v1/external/{offerId}`, and falls
-back to clicking Save/Activate buttons if the API path fails. Most Circle store deals auto-apply —
-this targets manufacturer coupons & bonuses. Save-cap stops the run cleanly. Re-verify with
-`target-probe.js` on a signed-in Circle deals page (save one offer manually while it watches).
+DOM-first adapter (`clip-all-coupons-target.user.js` / `target-bookmarklet.txt`). Use
+`https://www.target.com/deals/all?facet=tap_to_apply` ("Coupons to apply"), then it scrolls and
+clicks `button[data-test="save-circle-offer-button"]` (Save/Apply). Optionally reads save-slot
+usage from `loyalty_guest_offerlists/v1/external`. **Do not** call `loyalty_offer_groups` —
+live OPTIONS returns 502. Re-verify with `target-probe.js` (save one offer manually while it watches).
 
 ## Files
 | File | What |

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Clip-All Coupons — Target Circle
 // @namespace    https://github.com/nathanrcast/clip-all-coupons
-// @version      0.1.0
-// @description  Save/activate Target Circle manufacturer coupons & bonuses in one tap via the loyalty offer API (DOM fallback). Firefox + mobile friendly.
+// @version      0.2.0
+// @description  Save/activate Target Circle manufacturer coupons & bonuses in one tap (DOM click; optional loyalty API). Firefox + mobile friendly.
 // @author       ncastel
 // @homepageURL  https://github.com/nathanrcast/clip-all-coupons
 // @downloadURL  https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons-target.user.js
@@ -18,45 +18,43 @@
 (function () {
   "use strict";
 
-  // ── Why API-first (with DOM fallback) ────────────────────────────────────
-  // Target Circle embeds loyalty offer endpoints in window.__CONFIG__ (same
-  // public web-client keys the site uses). Most store deals auto-apply since
-  // 2024-04; this tool saves/activates the offers that still need it
-  // (manufacturer coupons, bonuses, rebates). Save-cap (/circle/maxedDeals)
-  // still exists — stop cleanly when hit. If the API path fails, fall back to
-  // clicking on-page Save/Activate buttons (Kroger-style). Re-verify with
-  // browser/target-probe.js on a logged-in deals page.
+  // ── Why DOM-first (API save is secondary) ────────────────────────────────
+  // Live HAR (2026-08-02): GET loyalty_guest_offerlists/v1/external works, but
+  // loyalty_offer_groups/v1/categories returns 502 on CORS preflight — fetch
+  // throws and (in v0.1.0) aborted before DOM fallback. Offer grids on
+  // /deals/all?facet=tap_to_apply are slingshot/CDUI-rendered; the reliable
+  // path is clicking Save/Apply buttons (data-test=save-circle-offer-button).
+  // Most store deals auto-apply since 2024-04 — this targets coupons/bonuses.
+  // Save-cap still exists (75 slots seen). Re-verify with target-probe.js.
 
   const PW = (typeof unsafeWindow !== "undefined" && unsafeWindow) || window;
 
   const MIN_GAP_MS = 350, MAX_GAP_MS = 750;
-  const REQ_TIMEOUT_MS = 15000;
-  const CLIP_RETRIES = 2;
-  const BLOCK_RETRY_MS = 45000;
+  const REQ_TIMEOUT_MS = 12000;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const gap = () => MIN_GAP_MS + Math.random() * (MAX_GAP_MS - MIN_GAP_MS);
 
-  // Public web-client fallbacks (embedded in every Target page load — not user secrets).
   const FALLBACK_BASE = "https://api.target.com";
   const FALLBACK_API_KEY = "a5ae7fb188e78581614e4909f407462d8392b977";
   const FALLBACK_CLIENT_KEY = "NX1a8HGstVgSEONL1pMdNw==";
   const PATH_SAVED = "loyalty_guest_offerlists/v1/external";
-  const PATH_POST = "loyalty_guest_offerlists/v1/external";
-  const PATH_CATEGORIES = "loyalty_offer_groups/v1/categories";
-  const PATH_COLLECTIONS = "loyalty_offer_groups/v1/collections";
 
+  // Prefer exact live selectors; avoid CSS [attr i] (spotty in some engines).
   const SAVE_BTN_SELS = [
+    'button[data-test="save-circle-offer-button"]',
     'button[data-test="save-button"]',
-    'button[data-test*="offer" i]',
-    'button[data-test*="deal" i]',
-    'button[data-test*="bonus" i]',
+    'button[data-test="cta-offer"]',
+    '[data-test="save-circle-offer-button"]',
+    '[data-test="cta-offer"] button',
   ];
-  const SAVE_RE = /^(save|activate|apply)(\s+(offer|deal|bonus|coupon))?$/i;
-  const DONE_RE = /saved|applied|activated|remove|unsave|added|in wallet|free up some space/i;
-  const MAXED_RE = /free up some space|max(ed)?\s*(deals|offers)|offer limit|too many/i;
+  // CTA language flag can yield "Save offer", "Apply", "Save <title>", etc.
+  const SAVE_START_RE = /^(save|activate|apply)\b/i;
+  const DONE_RE = /^(offer\s+)?(saved|applied|activated)\b|^remove\b|^unsave\b|applied in cart|already saved/i;
+  const MAXED_RE = /free up some space|max(ed)?\s*(deals|offers)|offer limit|too many|filled_slots|no more room/i;
 
   function isCouponsPath() {
     const p = location.pathname.toLowerCase();
+    const q = location.search.toLowerCase();
     return (
       /\/circle\b/.test(p) ||
       /target-circle/.test(p) ||
@@ -64,7 +62,8 @@
       /\/bonus\b/.test(p) ||
       /\/myoffers\b/.test(p) ||
       /\/saveddeals\b/.test(p) ||
-      /\/redeemoffers\b/.test(p)
+      /\/redeemoffers\b/.test(p) ||
+      /tap_to_apply|circle_deals/.test(q)
     );
   }
 
@@ -74,251 +73,81 @@
     return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t));
   }
 
-  // ---- session / config ---------------------------------------------------
   function getConfig() {
     const api = PW.__CONFIG__?.services?.apiPlatform || {};
     const lists = api.apis?.loyaltyGuestOfferLists?.endpointPaths || {};
-    const groups = api.apis?.loyaltyOfferGroups?.endpointPaths || {};
     const keys = api.circleOfferLoyaltyKeys || {};
     return {
       baseUrl: (api.baseUrl || FALLBACK_BASE).replace(/\/$/, ""),
       apiKey: keys.loyaltyApiKey || FALLBACK_API_KEY,
       clientKey: keys.loyaltyClientKey || FALLBACK_CLIENT_KEY,
       savedPath: lists.getSavedOffersV1 || PATH_SAVED,
-      postPath: lists.postOfferV1 || PATH_POST,
-      categoriesPath: groups.getLoyaltyCategoriesV1 || PATH_CATEGORIES,
-      categoryOffersPath: groups.getLoyaltyCategoryOffersV1 || PATH_CATEGORIES,
-      collectionsPath: groups.getLoyaltyCollectionsV1 || PATH_COLLECTIONS,
-      collectionOffersPath: groups.getLoyaltyCollectionOffersV1 || PATH_COLLECTIONS,
     };
   }
 
-  function getStoreId() {
-    const tryNum = (v) => {
-      const m = String(v || "").match(/\b(\d{3,5})\b/);
-      return m ? m[1] : "";
-    };
+  /** Optional: read save-slot usage. Never throws — categories/collections are intentionally unused (502). */
+  async function readSavedMeta() {
     try {
-      const cookies = document.cookie.split(";").map((c) => c.trim());
-      for (const c of cookies) {
-        const [k, ...rest] = c.split("=");
-        const v = decodeURIComponent(rest.join("=") || "");
-        if (/store/i.test(k) && tryNum(v)) return tryNum(v);
-        if (/UserLocation|GuestLocation|fiats/i.test(k) && tryNum(v)) return tryNum(v);
+      const cfg = getConfig();
+      const url = `${cfg.baseUrl}/${cfg.savedPath.replace(/^\//, "")}`;
+      const r = await fetchWithTimeout(url, {
+        headers: {
+          Accept: "application/json",
+          Authorization: cfg.clientKey,
+          "x-api-key": cfg.apiKey,
+        },
+        credentials: "include",
+      }, REQ_TIMEOUT_MS);
+      if (!r.ok) return null;
+      const json = await r.json().catch(() => null);
+      // Response may be array of list objects or a single object.
+      const rows = Array.isArray(json) ? json : json ? [json] : [];
+      let filled = 0, earned = 0, savedCount = 0;
+      for (const row of rows) {
+        const meta = row?.user_meta_data || row?.userMetaData || {};
+        if (meta.total_filled_slots != null) filled = Number(meta.total_filled_slots) || filled;
+        if (meta.total_earned_slots != null) earned = Number(meta.total_earned_slots) || earned;
+        const offers = row?.offers;
+        if (Array.isArray(offers)) savedCount += offers.length;
       }
-    } catch (e) { /* ignore */ }
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i) || "";
-        if (/store/i.test(k)) {
-          const n = tryNum(localStorage.getItem(k));
-          if (n) return n;
-        }
-      }
-    } catch (e) { /* ignore */ }
-    const pref = PW.__CONFIG__?.services?.apiPlatform; // no store here — leave empty
-    void pref;
-    return "";
+      return { filled, earned, savedCount };
+    } catch (e) {
+      console.warn("[clip-all-target] saved meta", e);
+      return null;
+    }
   }
 
-  function headers(cfg) {
-    return {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      Authorization: cfg.clientKey,
-      "x-api-key": cfg.apiKey,
-    };
+  function btnLabel(b) {
+    const aria = (b.getAttribute("aria-label") || "").trim();
+    const text = (b.textContent || "").trim().replace(/\s+/g, " ");
+    return { aria, text, both: (aria + " " + text).trim() };
   }
 
-  // ---- offer enumeration --------------------------------------------------
-  const ID_KEYS = ["offerId", "offer_id", "offerID", "id"];
-  const STATUS_KEYS = ["offerStatus", "offer_status", "status", "redemptionStatus", "redemption_status"];
-
-  function looksSaved(o) {
-    if (o == null) return false;
-    if (o.added === true || o.isAdded === true || o.saved === true) return true;
-    for (const k of STATUS_KEYS) {
-      const v = String(o[k] || "").toLowerCase();
-      if (/^(saved|applied|activated|clipped|redeemed|added)$/.test(v)) return true;
+  function isClipped(b) {
+    if (b.disabled || b.getAttribute("aria-pressed") === "true" || b.getAttribute("aria-disabled") === "true") {
+      return true;
+    }
+    const { aria, text } = btnLabel(b);
+    if (DONE_RE.test(aria) || DONE_RE.test(text)) return true;
+    // Confirmed BaseConfirmationButton often keeps initial text but sets data/class.
+    const dt = (b.getAttribute("data-test") || "") + " " + (b.className || "");
+    if (/confirmed|is-confirmed|offer-saved/i.test(dt) && !SAVE_START_RE.test(text) && !SAVE_START_RE.test(aria)) {
+      return true;
     }
     return false;
   }
 
-  function extractOffers(data, into, seen) {
-    if (Array.isArray(data)) {
-      for (const x of data) extractOffers(x, into, seen);
-      return;
-    }
-    if (data && typeof data === "object") {
-      const idKey = ID_KEYS.find(
-        (k) => data[k] != null && /^[A-Za-z0-9._-]+$/.test(String(data[k]))
-      );
-      if (idKey) {
-        const looksOffer =
-          STATUS_KEYS.some((k) => data[k] != null) ||
-          data.offer_description != null || data.offerDescription != null ||
-          data.title != null || data.description != null ||
-          data.image_url != null || data.imageUrl != null ||
-          data.added != null || data.legal_copy != null || data.legalCopy != null;
-        if (looksOffer) {
-          const id = String(data[idKey]);
-          if (!seen.has(id)) {
-            seen.add(id);
-            into.push({ offerId: id, saved: looksSaved(data), raw: data });
-          }
-        }
-      }
-      for (const v of Object.values(data)) extractOffers(v, into, seen);
-    }
-  }
-
-  function groupIds(data) {
-    const ids = [];
-    const seen = new Set();
-    const walk = (o) => {
-      if (Array.isArray(o)) { o.forEach(walk); return; }
-      if (!o || typeof o !== "object") return;
-      const id = o.categoryId || o.category_id || o.collectionId || o.collection_id || o.id;
-      if (id != null && (o.name != null || o.title != null || o.display_name != null || o.category_name != null)) {
-        const s = String(id);
-        if (!seen.has(s) && /^[A-Za-z0-9._-]+$/.test(s)) { seen.add(s); ids.push(s); }
-      }
-      for (const v of Object.values(o)) walk(v);
-    };
-    walk(data);
-    return ids;
-  }
-
-  async function apiGet(cfg, path) {
-    const url = `${cfg.baseUrl}/${path.replace(/^\//, "")}`;
-    const r = await fetchWithTimeout(url, { headers: headers(cfg), credentials: "include" }, REQ_TIMEOUT_MS);
-    if (r.status === 401 || r.status === 403) return { ok: false, blocked: true, status: r.status, json: null };
-    if (!r.ok) return { ok: false, blocked: false, status: r.status, json: null };
-    const json = await r.json().catch(() => null);
-    return { ok: true, blocked: false, status: r.status, json };
-  }
-
-  async function enumerateApi(cfg) {
-    const offers = [];
-    const seen = new Set();
-    let source = "none";
-    let apiError = null;
-
-    const saved = await apiGet(cfg, cfg.savedPath);
-    if (saved.blocked) return { offers: [], source: "none", apiError: `saved HTTP ${saved.status}`, blocked: true };
-    const savedIds = new Set();
-    if (saved.ok) {
-      const tmp = [];
-      extractOffers(saved.json, tmp, new Set());
-      tmp.forEach((o) => savedIds.add(o.offerId));
-    }
-
-    const pullGroup = async (listPath, itemPath, label) => {
-      const list = await apiGet(cfg, listPath);
-      if (list.blocked) { apiError = `${label} HTTP ${list.status}`; return true; }
-      if (!list.ok) { apiError = apiError || `${label} HTTP ${list.status}`; return false; }
-      const ids = groupIds(list.json);
-      // Also harvest any offers nested in the list response itself.
-      extractOffers(list.json, offers, seen);
-      for (const id of ids) {
-        const item = await apiGet(cfg, `${itemPath.replace(/\/$/, "")}/${encodeURIComponent(id)}`);
-        if (item.blocked) { apiError = `${label}/${id} HTTP ${item.status}`; return true; }
-        if (item.ok) extractOffers(item.json, offers, seen);
-        await sleep(80);
-      }
-      return false;
-    };
-
-    let blocked = await pullGroup(cfg.categoriesPath, cfg.categoryOffersPath, "categories");
-    if (!blocked) blocked = await pullGroup(cfg.collectionsPath, cfg.collectionOffersPath, "collections");
-
-    // Mark already-saved from the saved list and from offer fields.
-    for (const o of offers) {
-      if (savedIds.has(o.offerId)) o.saved = true;
-    }
-
-    if (offers.length) source = "api";
-    return { offers, source, apiError, blocked: !!blocked };
-  }
-
-  // ---- clip (API) ---------------------------------------------------------
-  async function clipOneOnce(cfg, offer, storeId) {
-    let url = `${cfg.baseUrl}/${cfg.postPath.replace(/\/$/, "")}/${encodeURIComponent(offer.offerId)}`;
-    if (storeId) url += `?location_id=${encodeURIComponent(storeId)}`;
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: headers(cfg),
-      credentials: "include",
-    }, REQ_TIMEOUT_MS);
-    if (r.status === 403 || r.status === 429) return "blocked";
-    if (r.status === 409 || r.status === 422) {
-      // Likely already saved or at capacity — peek body.
-      const t = await r.text().catch(() => "");
-      if (MAXED_RE.test(t)) return "maxed";
-      return "already";
-    }
-    if (r.status >= 500) return "retry";
-    if (!r.ok) {
-      const t = await r.text().catch(() => "");
-      if (MAXED_RE.test(t)) return "maxed";
-      console.warn("[clip-all-target] save failed", offer.offerId, r.status);
-      return "failed";
-    }
-    const j = await r.json().catch(() => ({}));
-    const blob = JSON.stringify(j);
-    if (MAXED_RE.test(blob)) return "maxed";
-    return "clipped";
-  }
-
-  async function clipOne(cfg, offer, storeId) {
-    let blockedOnce = false;
-    for (let attempt = 0; attempt <= CLIP_RETRIES; attempt++) {
-      try {
-        const res = await clipOneOnce(cfg, offer, storeId);
-        if (res === "blocked") {
-          if (!blockedOnce) {
-            blockedOnce = true;
-            await sleep(BLOCK_RETRY_MS);
-            continue;
-          }
-          return "blocked";
-        }
-        if (res === "retry") {
-          if (attempt < CLIP_RETRIES) {
-            await sleep(1000 * Math.pow(3, attempt));
-            continue;
-          }
-          return "failed";
-        }
-        return res;
-      } catch (e) {
-        if (attempt < CLIP_RETRIES) {
-          await sleep(1000 * Math.pow(3, attempt));
-          continue;
-        }
-        console.warn("[clip-all-target] save error", offer.offerId, e);
-        return "failed";
-      }
-    }
-    return "failed";
-  }
-
-  // ---- DOM fallback -------------------------------------------------------
-  function isClipped(b) {
-    const t = (b.textContent || "").trim().toLowerCase().replace(/\s+/g, " ");
-    const a = (b.getAttribute("aria-label") || "").toLowerCase();
-    return (
-      b.disabled ||
-      b.getAttribute("aria-pressed") === "true" ||
-      DONE_RE.test(t) ||
-      DONE_RE.test(a)
-    );
-  }
-
   function looksSavable(b) {
-    const t = (b.textContent || "").trim().replace(/\s+/g, " ");
-    const a = (b.getAttribute("aria-label") || "").trim();
-    return SAVE_RE.test(t) || SAVE_RE.test(a) || /^(save|activate|apply)\b/i.test(a);
+    if (isClipped(b)) return false;
+    const dt = (b.getAttribute("data-test") || "").toLowerCase();
+    if (dt === "save-circle-offer-button" || dt === "save-button") return true;
+    const { aria, text } = btnLabel(b);
+    if (SAVE_START_RE.test(aria) || SAVE_START_RE.test(text)) return true;
+    // Parent wrapper sometimes holds data-test=cta-offer with an inner button.
+    if (b.closest('[data-test="cta-offer"]') && (SAVE_START_RE.test(aria) || SAVE_START_RE.test(text) || !text)) {
+      return !DONE_RE.test(aria) && !DONE_RE.test(text);
+    }
+    return false;
   }
 
   function maxedVisible() {
@@ -326,26 +155,34 @@
     return MAXED_RE.test(text);
   }
 
+  function couponsRoot() {
+    return (
+      document.querySelector('[data-test="offer-card"]')?.closest("main, [class*='OfferGrid'], body") ||
+      document.querySelector("main") ||
+      document.body
+    );
+  }
+
   function collectSaveButtons() {
-    const root = document.querySelector("main") || document.body;
+    const root = couponsRoot();
     const set = new Set();
     for (const sel of SAVE_BTN_SELS) {
-      root.querySelectorAll(sel).forEach((b) => { if (!isClipped(b) && looksSavable(b)) set.add(b); });
+      try {
+        root.querySelectorAll(sel).forEach((b) => {
+          const el = b.tagName === "BUTTON" || b.getAttribute("role") === "button" ? b : b.querySelector("button") || b;
+          if (looksSavable(el)) set.add(el);
+        });
+      } catch (e) { /* bad selector in older engines */ }
     }
     root.querySelectorAll("button").forEach((b) => {
-      if (looksSavable(b) && !isClipped(b)) set.add(b);
+      if (looksSavable(b)) set.add(b);
     });
     return [...set];
   }
 
-  function countSaveCandidates() {
-    return collectSaveButtons().length;
-  }
-
   async function loadAllCards(onProgress, shouldStop) {
     let last = -1, stable = 0;
-    for (let i = 0; i < 40 && stable < 3 && !shouldStop(); i++) {
-      // Click any visible "Load more" first, then scroll.
+    for (let i = 0; i < 50 && stable < 3 && !shouldStop(); i++) {
       document.querySelectorAll("button").forEach((b) => {
         const t = (b.textContent || "").trim().toLowerCase();
         if (/^load more/.test(t) && !b.disabled) {
@@ -353,8 +190,8 @@
         }
       });
       window.scrollTo(0, document.body.scrollHeight);
-      await sleep(700);
-      const n = countSaveCandidates();
+      await sleep(650);
+      const n = collectSaveButtons().length;
       stable = n === last ? stable + 1 : 0;
       last = n;
       onProgress(n);
@@ -362,7 +199,6 @@
     window.scrollTo(0, 0);
   }
 
-  // ---- UI -----------------------------------------------------------------
   function overlay() {
     const el = document.createElement("div");
     el.id = "cc-overlay";
@@ -384,123 +220,11 @@
 
   let running = false;
 
-  async function runApiPath(ov, msg, cnt, bar, stopFlag) {
-    const cfg = getConfig();
-    const storeId = getStoreId();
-    msg.textContent = "Loading Circle offers (API)…";
-    const { offers, source, apiError, blocked } = await enumerateApi(cfg);
-    if (stopFlag()) return { done: true, text: "Stopped." };
-    if (blocked) return { done: false, reason: "blocked", detail: apiError };
-    const pending = offers.filter((o) => !o.saved);
-    if (!pending.length) {
-      if (source === "api" && offers.length) {
-        return { done: true, text: "All caught up! Every saveable Circle offer is already saved." };
-      }
-      return { done: false, reason: "empty", detail: apiError };
-    }
-
-    msg.textContent = "Saving Circle offers… please don't close this tab.";
-    let clipped = 0, already = 0, failed = 0, maxed = false;
-    const total = pending.length;
-    for (let i = 0; i < pending.length && !stopFlag(); i++) {
-      const res = await clipOne(cfg, pending[i], storeId);
-      if (res === "clipped") clipped++;
-      else if (res === "already") already++;
-      else if (res === "maxed") { maxed = true; break; }
-      else if (res === "blocked") {
-        return {
-          done: true,
-          text: `Paused — Target blocked further saves (${clipped} saved). Try again in a minute.`,
-          count: `${clipped} saved · ${already} already · ${failed} failed`,
-        };
-      } else failed++;
-      cnt.textContent = `${clipped + already + failed} / ${total}`;
-      bar.style.width = Math.min(100, ((i + 1) / total) * 100) + "%";
-      await sleep(gap());
-    }
-    bar.style.width = "100%";
-    const summary = `${clipped} saved · ${already} already · ${failed} failed`;
-    if (maxed) {
-      return {
-        done: true,
-        text: `Saved ${clipped} offer${clipped === 1 ? "" : "s"}, then hit Target's save limit. Remove some saved deals and run again.`,
-        count: summary,
-      };
-    }
-    if (stopFlag()) {
-      return { done: true, text: `Stopped — ${clipped} saved so far.`, count: summary };
-    }
-    return {
-      done: true,
-      text: `Done! Saved ${clipped} Circle offer${clipped === 1 ? "" : "s"}. (Store deals auto-apply — only coupons/bonuses need saving.)`,
-      count: summary,
-    };
-  }
-
-  async function runDomPath(ov, msg, cnt, bar, stopFlag) {
-    msg.textContent = "Loading offers (scrolling the page)…";
-    await loadAllCards((n) => { cnt.textContent = n + " found"; }, stopFlag);
-    if (stopFlag()) return { text: "Stopped." };
-
-    let buttons = collectSaveButtons();
-    if (!buttons.length) {
-      return { text: "No unsaved Circle offers found on this page. Open Circle Deals while signed in, or try again after the page finishes loading." };
-    }
-    const runTotal = buttons.length;
-    let attempts = 0, verified = 0, lastRemaining = -1, idlePasses = 0, maxed = false;
-
-    for (let pass = 0; pass < 8 && !stopFlag() && !maxed; pass++) {
-      if (pass > 0) {
-        buttons = collectSaveButtons();
-        if (!buttons.length) break;
-      }
-      msg.textContent = "Saving Circle offers… please don't close this tab.";
-      for (const b of buttons) {
-        if (stopFlag()) break;
-        try {
-          b.scrollIntoView({ block: "center" });
-          b.click();
-          attempts++;
-          await sleep(120);
-          if (maxedVisible()) { maxed = true; break; }
-          if (isClipped(b) || !b.isConnected) verified++;
-        } catch (e) { /* ignore */ }
-        cnt.textContent = `${attempts} attempted · ${verified} saved (of ~${runTotal})`;
-        bar.style.width = Math.min(100, (attempts / runTotal) * 100) + "%";
-        await sleep(gap());
-      }
-      await sleep(1200);
-      if (maxed) break;
-      const remaining = collectSaveButtons().length;
-      idlePasses = remaining === lastRemaining ? idlePasses + 1 : 0;
-      lastRemaining = remaining;
-      if (idlePasses >= 2) break;
-    }
-
-    bar.style.width = "100%";
-    const summary = `${verified} saved · ${attempts} attempted`;
-    if (maxed) {
-      return {
-        text: `Saved ${verified} offer${verified === 1 ? "" : "s"}, then hit Target's save limit. Remove some saved deals and run again.`,
-        count: summary,
-      };
-    }
-    if (!attempts) {
-      return { text: "No unsaved Circle offers found on this page." };
-    }
-    return {
-      text: stopFlag()
-        ? `Stopped — ${verified} saved so far.`
-        : `Done! Saved ${verified} Circle offer${verified === 1 ? "" : "s"}.`,
-      count: summary,
-    };
-  }
-
   async function clipAll() {
     if (running) return;
     if (!isCouponsPath()) {
       const ok = confirm(
-        "This doesn't look like a Target Circle / deals page. Open Circle Deals first for best results.\n\nContinue anyway?"
+        "This doesn't look like Target Circle / Deals. Open Deals → Coupons to apply (or Circle) first.\n\nContinue anyway?"
       );
       if (!ok) return;
     }
@@ -522,19 +246,84 @@
     };
 
     try {
-      const apiResult = await runApiPath(ov, msg, cnt, bar, () => stop);
-      if (apiResult.done) {
-        finish(apiResult.text, apiResult.count);
-        return;
+      msg.textContent = "Checking saved Circle offers…";
+      const meta = await readSavedMeta();
+      if (meta && meta.earned > 0 && meta.filled >= meta.earned) {
+        return finish(
+          `Save limit full (${meta.filled}/${meta.earned}). Remove some saved deals, then run again.`,
+          `${meta.savedCount} saved`
+        );
       }
-      // API empty/blocked → DOM fallback
-      msg.textContent = "API path unavailable — trying on-page buttons…";
-      await sleep(400);
-      const domResult = await runDomPath(ov, msg, cnt, bar, () => stop);
-      finish(domResult.text, domResult.count);
+      if (stop) return finish("Stopped.");
+
+      msg.textContent = "Loading offers (scrolling the page)…";
+      await loadAllCards((n) => {
+        cnt.textContent = meta && meta.earned
+          ? `${n} to save · ${meta.filled}/${meta.earned} slots used`
+          : n + " found";
+      }, () => stop);
+      if (stop) return finish("Stopped.");
+
+      let buttons = collectSaveButtons();
+      if (!buttons.length) {
+        return finish(
+          meta && meta.savedCount
+            ? "No unsaved coupons/bonuses on this page. Try Deals → Coupons to apply, or you're all caught up."
+            : "No Save/Apply buttons found. Open https://www.target.com/deals/all?facet=tap_to_apply while signed in, wait for offers to load, then try again."
+        );
+      }
+
+      const runTotal = buttons.length;
+      let attempts = 0, verified = 0, lastRemaining = -1, idlePasses = 0, maxed = false;
+
+      for (let pass = 0; pass < 8 && !stop && !maxed; pass++) {
+        if (pass > 0) {
+          buttons = collectSaveButtons();
+          if (!buttons.length) break;
+        }
+        msg.textContent = "Saving Circle offers… please don't close this tab.";
+        for (const b of buttons) {
+          if (stop) break;
+          try {
+            b.scrollIntoView({ block: "center", inline: "nearest" });
+            b.click();
+            attempts++;
+            await sleep(150);
+            if (maxedVisible()) { maxed = true; break; }
+            if (isClipped(b) || !b.isConnected) verified++;
+          } catch (e) { /* ignore */ }
+          cnt.textContent = `${attempts} attempted · ${verified} saved (of ~${runTotal})`;
+          bar.style.width = Math.min(100, (attempts / runTotal) * 100) + "%";
+          await sleep(gap());
+        }
+        await sleep(1000);
+        if (maxed) break;
+        const remaining = collectSaveButtons().length;
+        idlePasses = remaining === lastRemaining ? idlePasses + 1 : 0;
+        lastRemaining = remaining;
+        if (idlePasses >= 2) break;
+      }
+
+      bar.style.width = "100%";
+      const summary = `${verified} saved · ${attempts} attempted`;
+      if (maxed) {
+        return finish(
+          `Saved ${verified} offer${verified === 1 ? "" : "s"}, then hit Target's save limit. Remove some saved deals and run again.`,
+          summary
+        );
+      }
+      if (!attempts) {
+        return finish("No unsaved Circle offers found on this page.");
+      }
+      finish(
+        stop
+          ? `Stopped — ${verified} saved so far.`
+          : `Done! Saved ${verified} Circle offer${verified === 1 ? "" : "s"}. (Store deals auto-apply — only coupons/bonuses need saving.)`,
+        summary
+      );
     } catch (e) {
       console.warn("[clip-all-target]", e);
-      finish("Something went wrong. Reload the Circle Deals page and try again.");
+      finish("Something went wrong. Reload the Deals page and try again.");
     }
   }
 
@@ -570,7 +359,6 @@
   }
 
   addButton();
-  // Target is a SPA — re-add the button after client-side navigation (debounced).
   new MutationObserver(scheduleAddButton).observe(document.documentElement || document.body, {
     childList: true, subtree: true,
   });
