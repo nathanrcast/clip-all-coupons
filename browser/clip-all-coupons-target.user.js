@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Clip-All Coupons — Target Circle
 // @namespace    https://github.com/nathanrcast/clip-all-coupons
-// @version      0.2.0
+// @version      0.2.1
 // @description  Save/activate Target Circle manufacturer coupons & bonuses in one tap (DOM click; optional loyalty API). Firefox + mobile friendly.
 // @author       ncastel
 // @homepageURL  https://github.com/nathanrcast/clip-all-coupons
@@ -25,7 +25,8 @@
   // /deals/all?facet=tap_to_apply are slingshot/CDUI-rendered; the reliable
   // path is clicking Save/Apply buttons (data-test=save-circle-offer-button).
   // Most store deals auto-apply since 2024-04 — this targets coupons/bonuses.
-  // Save-cap still exists (75 slots seen). Re-verify with target-probe.js.
+  // total_earned_slots often reads 75 (legacy marketed cap) but is NOT a reliable
+  // hard stop — live runs can save far more. Only stop on an on-page maxed modal.
 
   const PW = (typeof unsafeWindow !== "undefined" && unsafeWindow) || window;
 
@@ -247,19 +248,15 @@
 
     try {
       msg.textContent = "Checking saved Circle offers…";
+      // Informational only — do NOT gate on filled/earned (earned is often a stale
+      // "75" while filled can be hundreds after a successful mass-save).
       const meta = await readSavedMeta();
-      if (meta && meta.earned > 0 && meta.filled >= meta.earned) {
-        return finish(
-          `Save limit full (${meta.filled}/${meta.earned}). Remove some saved deals, then run again.`,
-          `${meta.savedCount} saved`
-        );
-      }
       if (stop) return finish("Stopped.");
 
       msg.textContent = "Loading offers (scrolling the page)…";
       await loadAllCards((n) => {
-        cnt.textContent = meta && meta.earned
-          ? `${n} to save · ${meta.filled}/${meta.earned} slots used`
+        cnt.textContent = meta && meta.savedCount
+          ? `${n} to save · ${meta.savedCount} already saved`
           : n + " found";
       }, () => stop);
       if (stop) return finish("Stopped.");

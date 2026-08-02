@@ -8,7 +8,7 @@ retailer family, because the backends are completely different:
 |---|---|---|---|
 | **Albertsons** | Safeway, Albertsons, Vons, Acme, Jewel-Osco, Randalls, Tom Thumb, Shaw's, Star Market, Pavilions, Andronico's, Carrs, Haggen, Kings, Balducci's | for-U `ecomgallery` JSON API | **none** — clips every offer in one pass |
 | **Kroger** | Kroger, Fry's, Ralphs, King Soopers, City Market, Smith's, Fred Meyer, QFC, Dillons, Baker's, Mariano's, Metro Market, Pick 'n Save, Food 4 Less, Foods Co | clicks the on-page clip buttons | **~150/run** (Kroger only renders ~150 at a time — run again for the rest) |
-| **Target Circle** | Target | clicks Save/Apply on Deals ("Coupons to apply") | **account save limit** (~75) — remove saved deals and re-run if hit |
+| **Target Circle** | Target | clicks Save/Apply on Deals ("Coupons to apply") | stop only if Target shows a maxed/save-limit modal |
 
 Firefox desktop + Firefox Android friendly; the bookmarklets work in any browser (incl. iOS Safari).
 
@@ -38,8 +38,8 @@ coupons at a time, one run clips up to ~150 — run it again for more. No networ
 checkout (since 2024). Open **Deals → Coupons to apply**
 (`https://www.target.com/deals/all?facet=tap_to_apply`), then the adapter scrolls and clicks each
 **Save/Apply** button (`data-test=save-circle-offer-button`). It optionally reads your saved-slot
-usage from Target's loyalty API; offer-group enumeration is skipped (live 502). Save-cap (~75)
-stops the run cleanly.
+usage from Target's loyalty API; offer-group enumeration is skipped (live 502). Stops only if
+an on-page save-limit modal appears (API "75 slots" is not a hard stop).
 
 ## Install — userscript (recommended)
 

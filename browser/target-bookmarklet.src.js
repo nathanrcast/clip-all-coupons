@@ -132,11 +132,8 @@
     }
 
     msg.textContent = "Checking saved Circle offers…";
+    // Informational only — do not gate on filled/earned (earned often stale "75").
     var meta = await readSavedMeta();
-    if (meta && meta.earned > 0 && meta.filled >= meta.earned) {
-      return finish("Save limit full (" + meta.filled + "/" + meta.earned + "). Remove some saved deals, then run again.",
-        meta.savedCount + " saved");
-    }
     if (stop) return finish("Stopped.");
 
     msg.textContent = "Loading offers (scrolling the page)…";
@@ -150,7 +147,7 @@
       await sleep(650);
       var n = collect().length;
       stable = n === last ? stable + 1 : 0; last = n;
-      cnt.textContent = meta && meta.earned ? (n + " to save · " + meta.filled + "/" + meta.earned + " slots") : (n + " found");
+      cnt.textContent = meta && meta.savedCount ? (n + " to save · " + meta.savedCount + " already saved") : (n + " found");
     }
     window.scrollTo(0, 0);
     if (stop) return finish("Stopped.");

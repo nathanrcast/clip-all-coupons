@@ -9,7 +9,8 @@ unrelated, so they share only the overlay/progress UX and the serial+jittered cl
   clipper does (kro-clipper, kroger-cli, the Ralphs gist).
 - **Target Circle** — **DOM-first** Save/Apply clicks on Deals (`/deals/all?facet=tap_to_apply`).
   Most store deals auto-apply since 2024-04; this saves manufacturer coupons / bonuses.
-  Account save-cap still exists (75 slots seen live). Optional saved-list API for slot usage only.
+  API reports `total_earned_slots` (often 75) but that is not a reliable hard stop —
+  live mass-saves can exceed it; only trust an on-page maxed modal.
 
 ## Confirmed for-U API — Albertsons banners (probed 2026-06-15, store 1487, Firefox)
 - **Session globals (page MAIN world):** token `window.AB.userInfo.SWY_SHOP_TOKEN`; `storeId` from
@@ -48,7 +49,10 @@ unrelated, so they share only the overlay/progress UX and the serial+jittered cl
 ## Confirmed Target Circle (live HAR 2026-08-02 on `/deals/all?facet=tap_to_apply`)
 - **Works:** `GET https://api.target.com/loyalty_guest_offerlists/v1/external` with
   `Authorization: <loyaltyClientKey>`, `x-api-key: <loyaltyApiKey>`, `credentials: "include"`.
-  Returns saved offers + `user_meta_data.total_filled_slots` / `total_earned_slots` (75 cap seen).
+  Returns saved offers + `user_meta_data.total_filled_slots` / `total_earned_slots`.
+  `total_earned_slots` often reads **75** (legacy marketed save cap) but is **not** a hard
+  client-side stop — a live run saved 300+ while earned stayed 75. Never gate on
+  `filled >= earned` (v0.2.0 bug → fixed in v0.2.1).
 - **Broken for clients:** `GET loyalty_offer_groups/v1/categories` — OPTIONS preflight **502**
   ("no upstream"), so browser `fetch` fails (status 0). **Do not enumerate via offer_groups.**
   v0.1.0 API-first path threw on that failure and never reached DOM fallback — fixed in v0.2.0.

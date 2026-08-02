@@ -64,8 +64,9 @@ the current selectors + any clip API call.
 DOM-first adapter (`clip-all-coupons-target.user.js` / `target-bookmarklet.txt`). Use
 `https://www.target.com/deals/all?facet=tap_to_apply` ("Coupons to apply"), then it scrolls and
 clicks `button[data-test="save-circle-offer-button"]` (Save/Apply). Optionally reads save-slot
-usage from `loyalty_guest_offerlists/v1/external`. **Do not** call `loyalty_offer_groups` —
-live OPTIONS returns 502. Re-verify with `target-probe.js` (save one offer manually while it watches).
+usage from `loyalty_guest_offerlists/v1/external` (do not gate on the often-stale "75" earned
+slots). **Do not** call `loyalty_offer_groups` — live OPTIONS returns 502. Re-verify with
+`target-probe.js` (save one offer manually while it watches).
 
 ## Files
 | File | What |
