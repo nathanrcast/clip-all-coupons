@@ -13,8 +13,8 @@
   .wrap{max-width:560px;margin:0 auto}
   h1{font-size:1.7rem;margin:.2em 0 .1em;text-align:center}
   .tag{text-align:center;color:var(--muted);margin:0 0 22px}
-  .pick{display:flex;gap:10px;margin-bottom:22px}
-  .pick button{flex:1;padding:16px;font-size:1.05rem;font-weight:700;border:2px solid var(--line);
+  .pick{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:22px}
+  .pick button{flex:1 1 140px;padding:16px;font-size:1.05rem;font-weight:700;border:2px solid var(--line);
     background:var(--card);color:var(--txt);border-radius:14px;cursor:pointer}
   .pick button.active{border-color:var(--red);background:#241015}
   .panel{display:none}
@@ -51,6 +51,7 @@
     <div class="pick">
       <button id="a-alb" onclick="andStore('alb')">🛒 Safeway / Albertsons</button>
       <button id="a-kro" onclick="andStore('kro')">🛒 Kroger family</button>
+      <button id="a-tgt" onclick="andStore('tgt')">🎯 Target Circle</button>
     </div>
     <div class="step">
       <h3><span class="num">1</span> Get the Firefox app</h3>
@@ -73,9 +74,10 @@
     <div class="step">
       <h3><span class="num">4</span> Use it</h3>
       <p>1. In Firefox, go to <a class="lnk" id="and-store-link" href="https://www.safeway.com/foru/coupons-deals.html" target="_blank" rel="noopener">Safeway coupons &amp; deals</a> and <b>sign in</b>.</p>
-      <p>2. Tap the <b>✂ Clip all coupons</b> button at the bottom-right.</p>
-      <p>3. Wait for "Done!" — large Albertsons lists can take several minutes. 🎉</p>
+      <p>2. Tap the floating clipper button at the bottom-right (<b id="and-fab-label">✂ Clip all coupons</b>).</p>
+      <p>3. Wait for "Done!" — large lists can take several minutes. 🎉</p>
       <p class="hint" id="and-krohint" style="display:none">Kroger shows ~150 coupons at a time — when it's done, just run it again for the next batch.</p>
+      <p class="hint" id="and-tgthint" style="display:none">Most Target Circle store deals auto-apply. This saves manufacturer coupons &amp; bonuses. If you hit the save limit, remove some saved deals and run again.</p>
     </div>
   </section>
 
@@ -88,6 +90,7 @@
     <div class="pick">
       <button id="s-alb" onclick="store('alb')">🛒 Safeway / Albertsons</button>
       <button id="s-kro" onclick="store('kro')">🛒 Kroger family</button>
+      <button id="s-tgt" onclick="store('tgt')">🎯 Target Circle</button>
     </div>
     <div class="step">
       <h3><span class="num">1</span> Copy the clipper</h3>
@@ -109,8 +112,9 @@
       <h3><span class="num">4</span> Use it</h3>
       <p>1. In Safari, go to <a class="lnk" id="ios-store-link" href="https://www.safeway.com/foru/coupons-deals.html" target="_blank" rel="noopener">Safeway coupons &amp; deals</a> and <b>sign in</b>.</p>
       <p>2. Tap the address bar, type <b id="ios-name2">Clip</b>, and tap the <b id="ios-name3">Clip Coupons</b> bookmark.</p>
-      <p>3. Wait for "Done!" — large Albertsons lists can take several minutes. 🎉</p>
+      <p>3. Wait for "Done!" — large lists can take several minutes. 🎉</p>
       <p class="hint" id="ios-krohint" style="display:none">Kroger shows ~150 coupons at a time — when it's done, just tap the bookmark again for the next batch.</p>
+      <p class="hint" id="ios-tgthint" style="display:none">Most Target Circle store deals auto-apply. This saves manufacturer coupons &amp; bonuses. If you hit the save limit, remove some saved deals and run again.</p>
     </div>
   </section>
 
@@ -123,8 +127,43 @@
 </div>
 
 <script>
-  var GH_ALB = 'https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons.user.js';
-  var GH_KRO = 'https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons-kroger.user.js';
+  var GH = {
+    alb: 'https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons.user.js',
+    kro: 'https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons-kroger.user.js',
+    tgt: 'https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons-target.user.js',
+  };
+  var STORE = {
+    alb: {
+      label: 'Safeway coupons & deals',
+      href: 'https://www.safeway.com/foru/coupons-deals.html',
+      install: 'Install the Clipper',
+      copy: 'Copy the clipper code',
+      bookmark: 'Clip Coupons',
+      bookmarkHint: 'Clip',
+      fab: '✂ Clip all coupons',
+      file: 'bookmarklet.txt',
+    },
+    kro: {
+      label: 'Kroger coupons',
+      href: 'https://www.kroger.com/savings/cl/coupons/',
+      install: 'Install the Kroger Clipper',
+      copy: 'Copy the Kroger clipper code',
+      bookmark: 'Clip Kroger',
+      bookmarkHint: 'Kroger',
+      fab: '✂ Clip all coupons',
+      file: 'kroger-bookmarklet.txt',
+    },
+    tgt: {
+      label: 'Target Circle deals',
+      href: 'https://www.target.com/circle/offers',
+      install: 'Install the Target Clipper',
+      copy: 'Copy the Target clipper code',
+      bookmark: 'Clip Target',
+      bookmarkHint: 'Target',
+      fab: '✂ Save all Circle offers',
+      file: 'target-bookmarklet.txt',
+    },
+  };
 
   function pick(p){
     document.getElementById('p-and').classList.toggle('show',p==='and');
@@ -136,44 +175,46 @@
   var guess = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios' : 'and';
   pick((location.hash||'').replace('#','') || guess);
 
-  var andStoreSel='alb';
   function andStore(s){
-    andStoreSel=s;
-    var k = s==='kro';
-    document.getElementById('a-alb').classList.toggle('active',!k);
-    document.getElementById('a-kro').classList.toggle('active',k);
+    ['alb','kro','tgt'].forEach(function(k){
+      document.getElementById('a-'+k).classList.toggle('active', k===s);
+    });
+    var meta = STORE[s] || STORE.alb;
     var install=document.getElementById('and-install');
-    install.href = k ? GH_KRO : GH_ALB;
-    install.textContent = k ? 'Install the Kroger Clipper' : 'Install the Clipper';
+    install.href = GH[s] || GH.alb;
+    install.textContent = meta.install;
     var link=document.getElementById('and-store-link');
-    link.textContent = k ? 'Kroger coupons' : 'Safeway coupons & deals';
-    link.href = k ? 'https://www.kroger.com/savings/cl/coupons/' : 'https://www.safeway.com/foru/coupons-deals.html';
-    document.getElementById('and-krohint').style.display = k ? 'block' : 'none';
+    link.textContent = meta.label;
+    link.href = meta.href;
+    document.getElementById('and-fab-label').textContent = meta.fab;
+    document.getElementById('and-krohint').style.display = s==='kro' ? 'block' : 'none';
+    document.getElementById('and-tgthint').style.display = s==='tgt' ? 'block' : 'none';
   }
   andStore('alb');
 
   var iosStore='alb';
   function store(s){
     iosStore=s;
-    var k = s==='kro';
-    document.getElementById('s-alb').classList.toggle('active',!k);
-    document.getElementById('s-kro').classList.toggle('active',k);
-    document.getElementById('copybtn').textContent = k?'Copy the Kroger clipper code':'Copy the clipper code';
-    var name = k?'Clip Kroger':'Clip Coupons';
-    document.getElementById('ios-name').textContent = name;
-    document.getElementById('ios-name2').textContent = k?'Kroger':'Clip';
-    document.getElementById('ios-name3').textContent = name;
+    ['alb','kro','tgt'].forEach(function(k){
+      document.getElementById('s-'+k).classList.toggle('active', k===s);
+    });
+    var meta = STORE[s] || STORE.alb;
+    document.getElementById('copybtn').textContent = meta.copy;
+    document.getElementById('ios-name').textContent = meta.bookmark;
+    document.getElementById('ios-name2').textContent = meta.bookmarkHint;
+    document.getElementById('ios-name3').textContent = meta.bookmark;
     var link=document.getElementById('ios-store-link');
-    link.textContent = k?'Kroger coupons':'Safeway coupons & deals';
-    link.href = k?'https://www.kroger.com/savings/cl/coupons/':'https://www.safeway.com/foru/coupons-deals.html';
-    document.getElementById('ios-krohint').style.display = k?'block':'none';
+    link.textContent = meta.label;
+    link.href = meta.href;
+    document.getElementById('ios-krohint').style.display = s==='kro'?'block':'none';
+    document.getElementById('ios-tgthint').style.display = s==='tgt'?'block':'none';
     document.getElementById('copymsg').textContent='Use Safari for the next steps.';
   }
   store('alb');
 
   async function copyCode(){
     var msg=document.getElementById('copymsg');
-    var file = iosStore==='kro' ? 'kroger-bookmarklet.txt' : 'bookmarklet.txt';
+    var file = (STORE[iosStore] || STORE.alb).file;
     msg.textContent='Copying…';
     try{
       var txt=await (await fetch(file)).text();

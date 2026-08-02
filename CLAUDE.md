@@ -1,12 +1,15 @@
 # clip-all-coupons — repo facts
 
 Clip all of a user's grocery loyalty coupons at once, client-side in their own logged-in session
-(`browser/`). No server, nothing persisted. **Two adapters, one per retailer family — the backends
-are unrelated, so they share only the overlay/progress UX and the serial+jittered clip cadence:**
+(`browser/`). No server, nothing persisted. **One adapter per retailer family — the backends are
+unrelated, so they share only the overlay/progress UX and the serial+jittered clip cadence:**
 - **Albertsons** (Safeway, Vons, Acme, Jewel-Osco…) — clean for-U `ecomgallery` JSON API → **no cap**.
 - **Kroger** (Fry's, Ralphs, King Soopers, Smith's…) — no "all offers" API; **clicks on-page clip
   buttons**, capped ~150/run (Kroger lazy-renders ~150). DOM-click is what every working Kroger
   clipper does (kro-clipper, kroger-cli, the Ralphs gist).
+- **Target Circle** — loyalty offer JSON API (`api.target.com`) with DOM Save/Activate fallback.
+  Most store deals auto-apply since 2024-04; this saves manufacturer coupons / bonuses / rebates.
+  Account save-cap still exists (`/circle/maxedDeals`).
 
 ## Confirmed for-U API — Albertsons banners (probed 2026-06-15, store 1487, Firefox)
 - **Session globals (page MAIN world):** token `window.AB.userInfo.SWY_SHOP_TOKEN`; `storeId` from
@@ -42,20 +45,44 @@ are unrelated, so they share only the overlay/progress UX and the serial+jittere
   (`/p/np/<division>/Kroger/coupons` + `/coupon/clip?id&clipsource=KWL&signature`) exists but is old
   and division-specific — not used.
 
+## Confirmed Target Circle API (probed from public page bundles / `__CONFIG__`, 2026-08-02)
+- **Config:** `window.__CONFIG__.services.apiPlatform` (every Target page). Public web-client keys
+  live in `circleOfferLoyaltyKeys` (`loyaltyApiKey`, `loyaltyClientKey`) — same values the site
+  sends; not user secrets. Fallbacks hardcoded in the adapter match the live page.
+- **Base:** `https://api.target.com` + `credentials: "include"` (logged-in session cookies).
+- **Headers:** `Authorization: <loyaltyClientKey>`, `x-api-key: <loyaltyApiKey>`.
+- **Enumerate:** `GET loyalty_offer_groups/v1/categories` (+ `/{id}` for offers);
+  `GET loyalty_offer_groups/v1/collections` (+ `/{id}`);
+  `GET loyalty_guest_offerlists/v1/external` (already-saved).
+- **Save/clip:** `POST loyalty_guest_offerlists/v1/external/{offerId}?location_id=<storeId>`
+  (`location_id` optional when store unknown). Delete is same path with DELETE.
+- **Product note:** store Circle deals auto-apply at checkout; manufacturer coupons + bonuses still
+  need save/activate. Save limit still wired (`/circle/maxedDeals`) — stop cleanly on capacity errors.
+- **DOM fallback selectors:** `button[data-test="save-button"]` + text/aria
+  `Save|Activate|Apply` (+ optional `offer|deal|bonus|coupon`); skip saved/applied/remove.
+  "Load more" + scroll for lazy grids. `browser/target-probe.js` re-confirms selectors + live calls.
+- **Not live-tested on a signed-in household account** — API shape is from Target's shipped JS;
+  run the probe once signed in to confirm headers/body and tweak if needed.
+
 ## Gotchas
-1. **Firefox + GM_* grant sandboxing (Albertsons):** Violentmonkey hides page globals behind Xray vision
-   (they read as `undefined`). Read the session from `unsafeWindow`, not `window` — see the userscript header.
+1. **Firefox + GM_* grant sandboxing (Albertsons / Target):** Violentmonkey hides page globals behind
+   Xray vision (they read as `undefined`). Read the session/config from `unsafeWindow`, not `window`
+   — see the userscript headers.
 2. **Akamai Bot Manager ("Error 15"):** parallel clip bursts get scored as a bot. Clip **serially**
    with a jittered 350–750 ms gap; on `403`/`429`, back off (treat as "blocked") rather than hammer.
-   (Kroger likely has similar bot scoring — same serial+jitter cadence is reused.)
+   (Kroger / Target likely have similar bot scoring — same serial+jitter cadence is reused.)
 3. **Clip posts both `clipType` `"C"` and `"L"`** per offer (Albertsons).
-4. **Auto-update URLs** in both `*.user.js` (`@downloadURL`/`@updateURL`) point at this repo's GitHub
+4. **Auto-update URLs** in `*.user.js` (`@downloadURL`/`@updateURL`) point at this repo's GitHub
    raw path — keep them in sync if the repo/branch moves.
+5. **Target value is narrower than grocery clippers** — don't expect thousands of clips; only
+   offers that still require save/activate are in scope.
 
 ## Files
 - `browser/clip-all-coupons.user.js` — Albertsons userscript (floating button + menu command). Live tool.
 - `browser/clip-all-coupons-kroger.user.js` — Kroger userscript (DOM-click; floating button + menu command).
-- `browser/bookmarklet.src.js` + `browser/kroger-bookmarklet.src.js` → `browser/build-bookmarklet.sh`
-  (builds every `*bookmarklet.src.js` → matching `*.txt`).
-- `browser/gallery-probe.js` (Albertsons API shape) / `browser/kroger-probe.js` (Kroger API+selectors) — probes, clip nothing.
+- `browser/clip-all-coupons-target.user.js` — Target Circle userscript (API-first + DOM fallback).
+- `browser/bookmarklet.src.js` + `browser/kroger-bookmarklet.src.js` + `browser/target-bookmarklet.src.js`
+  → `browser/build-bookmarklet.sh` (builds every `*bookmarklet.src.js` → matching `*.txt`).
+- `browser/gallery-probe.js` (Albertsons) / `browser/kroger-probe.js` (Kroger) /
+  `browser/target-probe.js` (Target) — probes, clip nothing.
 - `browser/index.html` — optional hostable setup guide; `browser/deploy.compose.yml` — nginx + tunnel.

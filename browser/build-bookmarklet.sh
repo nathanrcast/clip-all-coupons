@@ -2,6 +2,7 @@
 # Minify every *bookmarklet.src.js into a javascript: URL -> matching *.txt
 #   bookmarklet.src.js         -> bookmarklet.txt          (Albertsons family)
 #   kroger-bookmarklet.src.js  -> kroger-bookmarklet.txt   (Kroger family)
+#   target-bookmarklet.src.js  -> target-bookmarklet.txt   (Target Circle)
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"

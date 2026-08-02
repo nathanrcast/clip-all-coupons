@@ -59,6 +59,15 @@ again for the rest. Install `clip-all-coupons-kroger.user.js` the same way, or u
 the clip buttons, run `kroger-probe.js` on the coupons page (clip one coupon manually) and it reports
 the current selectors + any clip API call.
 
+## Target Circle
+
+API-first adapter (`clip-all-coupons-target.user.js` / `target-bookmarklet.txt`). Reads public
+web-client keys from `window.__CONFIG__.services.apiPlatform`, enumerates via
+`loyalty_offer_groups`, saves via `POST loyalty_guest_offerlists/v1/external/{offerId}`, and falls
+back to clicking Save/Activate buttons if the API path fails. Most Circle store deals auto-apply —
+this targets manufacturer coupons & bonuses. Save-cap stops the run cleanly. Re-verify with
+`target-probe.js` on a signed-in Circle deals page (save one offer manually while it watches).
+
 ## Files
 | File | What |
 |---|---|
@@ -68,5 +77,8 @@ the current selectors + any clip API call.
 | `clip-all-coupons-kroger.user.js` | Kroger userscript (DOM-click; floating button + menu command) |
 | `kroger-bookmarklet.src.js` | readable Kroger bookmarklet source |
 | `kroger-probe.js` | Kroger: console probe of clip API + button selectors (clips nothing) |
+| `clip-all-coupons-target.user.js` | Target Circle userscript (API + DOM fallback) |
+| `target-bookmarklet.src.js` | readable Target bookmarklet source |
+| `target-probe.js` | Target: console probe of loyalty offer API + Save/Activate selectors |
 | `build-bookmarklet.sh` | terser-minifies every `*bookmarklet.src.js` → matching `*.txt` |
-| `bookmarklet.txt` / `kroger-bookmarklet.txt` | generated; paste as a bookmark URL |
+| `bookmarklet.txt` / `kroger-bookmarklet.txt` / `target-bookmarklet.txt` | generated; paste as a bookmark URL |

@@ -1,13 +1,14 @@
 # Clip-All Coupons
 
 Clip **all** of your grocery loyalty coupons at once — no clicking each one. Small browser tools
-(userscript or bookmarklet) that run in **your own logged-in session**. There are two adapters, one
-per retailer family, because the two backends are completely different:
+(userscript or bookmarklet) that run in **your own logged-in session**. There is one adapter per
+retailer family, because the backends are completely different:
 
 | Retailer family | Stores | Method | Cap |
 |---|---|---|---|
 | **Albertsons** | Safeway, Albertsons, Vons, Acme, Jewel-Osco, Randalls, Tom Thumb, Shaw's, Star Market, Pavilions, Andronico's, Carrs, Haggen, Kings, Balducci's | for-U `ecomgallery` JSON API | **none** — clips every offer in one pass |
 | **Kroger** | Kroger, Fry's, Ralphs, King Soopers, City Market, Smith's, Fred Meyer, QFC, Dillons, Baker's, Mariano's, Metro Market, Pick 'n Save, Food 4 Less, Foods Co | clicks the on-page clip buttons | **~150/run** (Kroger only renders ~150 at a time — run again for the rest) |
+| **Target Circle** | Target | loyalty offer JSON API (DOM Save/Activate fallback) | **account save limit** — remove saved deals and re-run if hit |
 
 Firefox desktop + Firefox Android friendly; the bookmarklets work in any browser (incl. iOS Safari).
 
@@ -33,6 +34,13 @@ unclipped "Clip" button** serially with the same jittered gap. Because the page 
 coupons at a time, one run clips up to ~150 — run it again for more. No network calls of its own.
 `browser/kroger-probe.js` captures the live API/selectors if a no-cap path is ever added.
 
+**Target Circle** (`clip-all-coupons-target.user.js`) — most Circle *store deals* auto-apply at
+checkout (since 2024). This adapter saves/activates what still needs it (manufacturer coupons,
+bonuses, rebates) via Target's loyalty offer API (`loyalty_guest_offerlists` /
+`loyalty_offer_groups` under `api.target.com`, using the public web-client keys from
+`window.__CONFIG__` + your session cookies). Falls back to clicking on-page Save/Activate buttons
+if the API path fails. Target still enforces a saved-offer limit — the run stops cleanly when hit.
+
 ## Install — userscript (recommended)
 
 1. Install **Violentmonkey** or **Tampermonkey** (both on AMO for Firefox desktop **and** Android).
@@ -41,14 +49,16 @@ coupons at a time, one run clips up to ~150 — run it again for more. No networ
      ([raw URL](https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons.user.js), auto-updates)
    - Kroger family → `browser/clip-all-coupons-kroger.user.js`
      ([raw URL](https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons-kroger.user.js), auto-updates)
-   - Shop at both? Install both — each only runs on its own stores.
+   - Target Circle → `browser/clip-all-coupons-target.user.js`
+     ([raw URL](https://raw.githubusercontent.com/nathanrcast/clip-all-coupons/main/browser/clip-all-coupons-target.user.js), auto-updates)
+   - Shop at more than one? Install each you need — adapters only run on their own stores.
 3. Open a coupons page while signed in → tap the floating **✂ Clip all coupons** button.
 
 ## Install — bookmarklet (no extension; any browser)
 
 1. Run `browser/build-bookmarklet.sh` to regenerate the `*.txt` files from source.
-2. Make a new bookmark; paste the contents of `bookmarklet.txt` (Albertsons) or
-   `kroger-bookmarklet.txt` (Kroger) as its URL.
+2. Make a new bookmark; paste the contents of `bookmarklet.txt` (Albertsons),
+   `kroger-bookmarklet.txt` (Kroger), or `target-bookmarklet.txt` (Target) as its URL.
 3. While signed in on a coupons page, tap the bookmark (on mobile, type its name in the address bar).
    - Some sites' CSP can block bookmarklets — the userscript path is more robust.
 
@@ -58,12 +68,15 @@ coupons at a time, one run clips up to ~150 — run it again for more. No networ
 |---|---|
 | `browser/clip-all-coupons.user.js` | Albertsons userscript (floating button + menu command) |
 | `browser/clip-all-coupons-kroger.user.js` | Kroger userscript (floating button + menu command) |
+| `browser/clip-all-coupons-target.user.js` | Target Circle userscript (API + DOM fallback) |
 | `browser/bookmarklet.src.js` | readable Albertsons bookmarklet source |
 | `browser/kroger-bookmarklet.src.js` | readable Kroger bookmarklet source |
+| `browser/target-bookmarklet.src.js` | readable Target bookmarklet source |
 | `browser/build-bookmarklet.sh` | minifies every `*bookmarklet.src.js` → matching `*.txt` (`javascript:` URL) |
-| `browser/bookmarklet.txt` / `kroger-bookmarklet.txt` | generated; paste as a bookmark URL |
+| `browser/bookmarklet.txt` / `kroger-bookmarklet.txt` / `target-bookmarklet.txt` | generated; paste as a bookmark URL |
 | `browser/gallery-probe.js` | Albertsons read-only console probe of the offer-data shape (clips nothing) |
 | `browser/kroger-probe.js` | Kroger console probe: captures the live clip API + button selectors (clips nothing) |
+| `browser/target-probe.js` | Target console probe: captures loyalty offer API + Save/Activate selectors (clips nothing) |
 | `browser/index.html` | optional mobile-first setup guide page you can host for others |
 | `browser/nginx.conf` | allowlist + security headers for the guide host |
 | `browser/deploy.compose.yml` | optional: nginx + Cloudflare Tunnel to serve the guide page |
