@@ -65,9 +65,9 @@
   };
 
   const selectors = [
-    "button.kds-Button--favorable",
-    "button.CouponCard-button.kds-Button--primary",
-    'button[data-testid="coupon-add-button"]',
+    'button[data-testid^="CouponActionButton-"]',
+    'button[data-testid^="CouponActionButton-"][aria-label^="Clip for coupon"]',
+    "button.CouponCard-button",
   ];
   const domReport = () => {
     const lines = [];

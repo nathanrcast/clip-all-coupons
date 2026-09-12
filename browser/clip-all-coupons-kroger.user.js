@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Clip-All Coupons — Kroger
 // @namespace    https://github.com/nathanrcast/clip-all-coupons
-// @version      0.2.0
+// @version      0.3.0
 // @description  Clip ALL of your Kroger-family digital coupons (Fry's, Ralphs, King Soopers, Smith's, Fred Meyer, QFC, Dillons…) in one tap. Firefox + mobile friendly.
 // @author       ncastel
 // @homepageURL  https://github.com/nathanrcast/clip-all-coupons
@@ -45,74 +45,72 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const gap = () => MIN_GAP_MS + Math.random() * (MAX_GAP_MS - MIN_GAP_MS);
 
-  const CLIP_SELECTORS = [
-    "button.kds-Button--favorable",
-    "button.CouponCard-button.kds-Button--primary",
-    'button[data-testid="coupon-add-button"]',
-  ];
+  // Each coupon card renders one action button (2026-09 citrus redesign):
+  //   <button data-testid="CouponActionButton-<couponId>"
+  //           aria-label="Clip for coupon: <desc> coupon">Clip</button>
+  // The verb (aria prefix / text) is the state: Clip → Clipping → Unclip, or
+  // "Sign In To Clip" when logged out; a disabled "Clip" means the clip limit
+  // was hit. Cash-back cards reuse the testid with "Get Cash Back" — left alone.
+  const ACTION_SEL = 'button[data-testid^="CouponActionButton-"]';
 
   function isCouponsPath() {
     const p = location.pathname.toLowerCase();
     return /\/savings\b/.test(p) || /coupon/.test(p) || /\/cl\//.test(p);
   }
 
-  function couponsRoot() {
-    return (
-      document.querySelector('[data-testid*="coupon" i]') ||
-      document.querySelector("main") ||
-      document.body
-    );
+  function verb(b) {
+    const a = (b.getAttribute("aria-label") || "").trim().toLowerCase();
+    const m = a.match(/^(.*?) for coupon:/);
+    return m ? m[1] : (b.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
   }
 
-  const isClipped = (b) => {
-    const t = (b.textContent || "").trim().toLowerCase();
-    const a = (b.getAttribute("aria-label") || "").toLowerCase();
-    return (
-      b.disabled ||
-      b.getAttribute("aria-pressed") === "true" ||
-      /clipped|unclip|added|remove|in cart/.test(t) ||
-      /clipped|added|unclip/.test(a)
-    );
-  };
+  const isClippable = (b) =>
+    verb(b) === "clip" && !b.disabled && b.getAttribute("aria-disabled") !== "true";
 
-  const looksClippable = (b) => {
-    const t = (b.textContent || "").trim().toLowerCase();
-    const a = (b.getAttribute("aria-label") || "").toLowerCase();
-    return t === "clip" || t === "clip coupon" || /^clip\b/.test(a);
-  };
-
-  /** Cheap count for scroll stability — known selectors only, scoped to coupons root. */
-  function countClipCandidates() {
-    const root = couponsRoot();
-    let n = 0;
-    for (const sel of CLIP_SELECTORS) {
-      root.querySelectorAll(sel).forEach((b) => { if (!isClipped(b)) n++; });
+  function actionButtons() {
+    const set = new Set(document.querySelectorAll(ACTION_SEL));
+    // Fallback if the testid is renamed again: exact "Clip" buttons inside <main>.
+    if (!set.size) {
+      (document.querySelector("main") || document.body)
+        .querySelectorAll("button").forEach((b) => { if (verb(b) === "clip") set.add(b); });
     }
-    return n;
-  }
-
-  function collectClipButtons() {
-    const root = couponsRoot();
-    const set = new Set();
-    for (const sel of CLIP_SELECTORS) {
-      root.querySelectorAll(sel).forEach((b) => { if (!isClipped(b)) set.add(b); });
-    }
-    // Text/aria fallback scoped to root (not the whole document).
-    root.querySelectorAll("button").forEach((b) => {
-      if (looksClippable(b) && !isClipped(b)) set.add(b);
-    });
     return [...set];
   }
 
-  // Kroger lazy-loads coupon cards on scroll. Scroll until clip-candidate count
-  // stabilizes (or we hit a sane ceiling). Honors shouldStop so Stop works mid-load.
+  const collectClipButtons = () => actionButtons().filter(isClippable);
+
+  function pageState() {
+    const bs = actionButtons();
+    return {
+      signedOut: bs.some((b) => verb(b) === "sign in to clip"),
+      limited: bs.filter((b) => verb(b) === "clip" && !isClippable(b)).length,
+    };
+  }
+
+  // React may swap the node after a click — re-find it by testid.
+  const current = (b) => {
+    const id = b.getAttribute("data-testid");
+    return (id && document.querySelector(`button[data-testid="${id}"]`)) || b;
+  };
+
+  async function waitClipped(b) {
+    for (let t = 0; t < 3000; t += 150) {
+      await sleep(150);
+      if (verb(current(b)) === "unclip") return true;
+    }
+    return false;
+  }
+
+  // Kroger infinite-scrolls the grid (window scroll). Scroll until the card
+  // count stops growing and no spinner is showing. Honors shouldStop.
   async function loadAllCards(onProgress, shouldStop) {
     let last = -1, stable = 0;
-    for (let i = 0; i < 40 && stable < 3 && !shouldStop(); i++) {
+    for (let i = 0; i < 120 && stable < 3 && !shouldStop(); i++) {
       window.scrollTo(0, document.body.scrollHeight);
-      await sleep(700);
-      const n = countClipCandidates();
-      stable = n === last ? stable + 1 : 0;
+      await sleep(800);
+      const n = actionButtons().length;
+      const busy = !!document.querySelector(".CouponsCatalogue-infiniteScrollSpinner");
+      stable = n === last && !busy ? stable + 1 : 0;
       last = n;
       onProgress(n);
     }
@@ -165,13 +163,18 @@
     };
 
     msg.textContent = "Loading all coupons (scrolling the page)…";
-    await loadAllCards((n) => { cnt.textContent = n + " found"; }, () => stop);
+    await loadAllCards((n) => { cnt.textContent = n + " coupons loaded"; }, () => stop);
     if (stop) return finish("Stopped.");
 
     // First pass size is the progress denominator (avoids jumping totals).
     let buttons = collectClipButtons();
     if (!buttons.length) {
-      return finish("No unclipped coupons found. If the page hadn't finished loading, reload and try again.");
+      const st = pageState();
+      return finish(
+        st.signedOut ? "You're signed out — sign in to your Kroger account, then try again."
+          : st.limited ? "Kroger's coupon clip limit is reached — unclip or use some coupons first."
+          : "No unclipped coupons found. If the page hadn't finished loading, reload and try again."
+      );
     }
     const runTotal = buttons.length;
     let attempts = 0, verified = 0, lastRemaining = -1, idlePasses = 0;
@@ -184,18 +187,19 @@
       msg.textContent = "Clipping coupons… please don't close this tab.";
       for (const b of buttons) {
         if (stop) break;
+        const btn = current(b);
+        if (!isClippable(btn)) continue;
         try {
-          b.scrollIntoView({ block: "center" });
-          b.click();
+          btn.scrollIntoView({ block: "center" });
+          btn.click();
           attempts++;
-          // Brief settle then check if the button now looks clipped.
-          await sleep(120);
-          if (isClipped(b) || !b.isConnected) verified++;
+          if (await waitClipped(btn)) verified++;
         } catch (e) { /* ignore */ }
         cnt.textContent = `${attempts} attempted · ${verified} clipped (of ~${runTotal})`;
         bar.style.width = Math.min(100, (attempts / runTotal) * 100) + "%";
         await sleep(gap());
       }
+      if (pageState().limited) break;
       await sleep(1200);
       const remaining = collectClipButtons().length;
       idlePasses = remaining === lastRemaining ? idlePasses + 1 : 0;
@@ -204,6 +208,7 @@
     }
 
     bar.style.width = "100%";
+    const limited = pageState().limited > 0;
     if (attempts === 0) {
       finish("No unclipped coupons found. If the page hadn't finished loading, reload and try again.");
     } else {
@@ -211,7 +216,9 @@
       finish(
         stop
           ? `Stopped — ${verified} clipped so far.`
-          : `Done! Clipped ${verified} coupon${verified === 1 ? "" : "s"}. (Kroger renders ~150 at a time — run again for more.)`,
+          : limited
+            ? `Clipped ${verified} coupon${verified === 1 ? "" : "s"} — Kroger's clip limit is now reached.`
+            : `Done! Clipped ${verified} coupon${verified === 1 ? "" : "s"}. Run again anytime to catch new or missed ones.`,
         summary
       );
     }

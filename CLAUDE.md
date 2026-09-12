@@ -35,16 +35,26 @@ unrelated, so they share only the overlay/progress UX and the serial+jittered cl
   hooks `fetch`/`XHR` + dumps the live clip-button selectors → run it on a logged-in Kroger coupons
   page (clip one coupon manually) to confirm/correct, and to capture a real clip request if a no-cap
   API path is ever added.
-- **Clip-button selectors (drift across redesigns — match several + a text/aria fallback):**
-  `button.kds-Button--favorable` (kroger-cli era), `button.CouponCard-button.kds-Button--primary`
-  (Ralphs gist), `button[data-testid="coupon-add-button"]`, plus any `<button>` whose text/aria-label
-  is "Clip"/"Clip coupon". Skip already-done buttons (`disabled`, `aria-pressed`, text/label matching
-  `clipped|unclip|added|remove`).
-- **Flow:** scroll to bottom until card count stabilizes (lazy-load all) → collect unclipped buttons →
-  click serially with the 350–750 ms jitter → re-collect between passes (clicking re-renders) → stop
-  when nothing clippable remains or no forward progress (≤8 passes). Legacy JSON API
-  (`/p/np/<division>/Kroger/coupons` + `/coupon/clip?id&clipsource=KWL&signature`) exists but is old
-  and division-specific — not used.
+- **Clip button (read from Kroger's `/cdn/coupons.*.js` bundle, 2026-09 "citrus" redesign — KDS
+  classes are gone):** `button[data-testid="CouponActionButton-<couponId>"]`, class
+  `CouponActionButton CouponCard-button`, `aria-label="<Verb> for coupon: <desc> coupon"`, text `<Verb>`.
+  The verb is the state: `Clip` → `Clipping` (disabled) → `Unclip`; `Sign In To Clip` when logged out;
+  a **disabled `Clip`** = clip limit reached. Cash-back cards reuse the testid with `Get Cash Back` /
+  `Remove` — deliberately not clicked. Classify by the aria verb (the description can contain words like
+  "added"), and never scope via `[data-testid*="coupon"]` — the header nav link
+  `SiteMenuMobile-MarqueeLinks-Digital Coupons` matches first (that was the 2026-09 "No unclipped
+  coupons found" bug). Fallback if the testid is renamed: exact-`Clip` `<button>`s inside `<main>`.
+- **Flow:** window-scroll to bottom until card count stabilizes and `.CouponsCatalogue-infiniteScrollSpinner`
+  is gone (react-infinite-scroll-component, loads until `totalCount`) → click each `Clip` serially,
+  waiting ≤3 s for the button to flip to `Unclip` (React replaces the node — re-find by testid), then the
+  350–750 ms jitter → re-collect between passes; stop on limit, nothing clippable, or no progress (≤8
+  passes). The SPA's own clip call is `POST /atlas/v1/savings-coupons/v1/clip-unclip`
+  `{action:"CLIP", couponId}` — a possible future API path, not used (headers unprobed). Legacy
+  `/p/np/<division>/Kroger/coupons` + `/coupon/clip?…&signature` is dead.
+- **Offline test harness:** headless Chromium (`~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome
+  --headless=new --dump-dom --virtual-time-budget=…`) gets past Akamai for page/bundle fetches (curl is
+  tarpitted) but the coupon list itself errors ("not finding any coupons") — test against a mock page.
+  Virtual time doesn't fire `scroll` events; mocks must poll `scrollY`.
 
 ## Confirmed Target Circle (live HAR 2026-08-02 on `/deals/all?facet=tap_to_apply`)
 - **Works:** `GET https://api.target.com/loyalty_guest_offerlists/v1/external` with
