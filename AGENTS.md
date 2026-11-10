@@ -39,14 +39,8 @@ unrelated, so they share only the overlay/progress UX and the serial+jittered cl
    offers that still require save/activate are in scope.
 
 ## Files
-- `browser/clip-all-coupons.user.js` — Albertsons userscript (floating button + menu command). Live tool.
-- `browser/clip-all-coupons-kroger.user.js` — Kroger userscript (DOM-click; floating button + menu command).
-- `browser/clip-all-coupons-target.user.js` — Target Circle userscript (API-first + DOM fallback).
-- `browser/bookmarklet.src.js` + `browser/kroger-bookmarklet.src.js` + `browser/target-bookmarklet.src.js`
-  → `browser/build-bookmarklet.sh` (builds every `*bookmarklet.src.js` → matching `*.txt`).
-- `browser/gallery-probe.js` (Albertsons) / `browser/kroger-probe.js` (Kroger) /
-  `browser/target-probe.js` (Target) — probes, clip nothing.
-- `browser/index.html` — optional hostable setup guide; `browser/deploy.compose.yml` — nginx + tunnel.
+
+Everything is in `browser/`: one `*.user.js` and one `*bookmarklet.src.js` per retailer (the Albertsons pair has no retailer prefix), plus a `*-probe.js` per retailer that inspects the page and clips nothing. `index.html` is an optional hostable setup guide; `deploy.compose.yml` is nginx + tunnel.
 
 ## Review focus
 
